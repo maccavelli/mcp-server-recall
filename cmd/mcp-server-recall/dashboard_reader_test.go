@@ -10,11 +10,10 @@ import (
 
 func TestReadDashboardSnapshot(t *testing.T) {
 	tmpDir := t.TempDir()
-	os.Setenv("XDG_CONFIG_HOME", tmpDir)
-	defer os.Unsetenv("XDG_CONFIG_HOME")
+	base := sandboxConfigDir(t)
 
 	// Ensure config directory exists and write a dummy config to override DBPath
-	cfgDir := filepath.Join(tmpDir, "mcp-server-recall")
+	cfgDir := filepath.Join(base, "mcp-server-recall")
 	os.MkdirAll(cfgDir, 0755)
 	configPath := filepath.Join(cfgDir, "recall.yaml")
 	os.WriteFile(configPath, []byte("dbPath: "+tmpDir+"\n"), 0644)

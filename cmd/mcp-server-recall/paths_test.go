@@ -10,12 +10,26 @@ import (
 	"github.com/maccavelli/mcp-server-recall/internal/config"
 )
 
+// sandboxConfigDir redirects the platform config root into a fresh temp dir
+// (HOME covers macOS, XDG_CONFIG_HOME covers Linux) and returns the resulting
+// os.UserConfigDir so expectations match production resolution on every OS.
+func sandboxConfigDir(t *testing.T) string {
+	t.Helper()
+	tempHome := t.TempDir()
+	t.Setenv("HOME", tempHome)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(tempHome, ".config"))
+	base, err := os.UserConfigDir()
+	if err != nil {
+		t.Fatalf("UserConfigDir after sandbox: %v", err)
+	}
+	return base
+}
+
 func TestPaths(t *testing.T) {
-	os.Setenv("XDG_CONFIG_HOME", "/tmp/config")
-	defer os.Unsetenv("XDG_CONFIG_HOME")
+	base := sandboxConfigDir(t)
 
 	dir := configDirPath()
-	expected := filepath.Join("/tmp/config", config.Name)
+	expected := filepath.Join(base, config.Name)
 	if dir != expected {
 		t.Errorf("expected %s, got %s", expected, dir)
 	}
@@ -26,9 +40,9 @@ func TestPaths(t *testing.T) {
 		t.Errorf("expected %s, got %s", expectedFile, path)
 	}
 
-	// Test error branch
-	os.Unsetenv("XDG_CONFIG_HOME")
-	os.Setenv("HOME", "") // Empty HOME will cause UserConfigDir to fail on Linux
+	// Test error branch — with both roots empty, UserConfigDir fails on any Unix.
+	t.Setenv("XDG_CONFIG_HOME", "")
+	t.Setenv("HOME", "")
 
 	dir = configDirPath()
 	expectedFallback := filepath.Join(".", config.Name)

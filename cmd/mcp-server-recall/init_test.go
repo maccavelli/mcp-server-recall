@@ -10,8 +10,7 @@ import (
 )
 
 func TestEnsureInitialized_FirstRun(t *testing.T) {
-	tempDir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", tempDir)
+	base := sandboxConfigDir(t)
 
 	Cfg = config.New("test-init-firstrun")
 
@@ -24,7 +23,7 @@ func TestEnsureInitialized_FirstRun(t *testing.T) {
 		t.Fatalf("ensureInitialized failed: %v", err)
 	}
 
-	expectedPath := filepath.Join(tempDir, config.Name, "recall.yaml")
+	expectedPath := filepath.Join(base, config.Name, "recall.yaml")
 	if _, err := os.Stat(expectedPath); os.IsNotExist(err) {
 		t.Fatalf("Configuration was NOT created at: %s", expectedPath)
 	}
@@ -43,8 +42,7 @@ func TestEnsureInitialized_FirstRun(t *testing.T) {
 }
 
 func TestEnsureInitialized_ForceOverwrite(t *testing.T) {
-	tempDir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", tempDir)
+	base := sandboxConfigDir(t)
 
 	Cfg = config.New("test-init-overwrite-yes")
 
@@ -58,7 +56,7 @@ func TestEnsureInitialized_ForceOverwrite(t *testing.T) {
 		t.Fatalf("first init failed: %v", err)
 	}
 
-	configPath := filepath.Join(tempDir, config.Name, "recall.yaml")
+	configPath := filepath.Join(base, config.Name, "recall.yaml")
 	if err := os.WriteFile(configPath, []byte("modified: true\n"), 0600); err != nil {
 		t.Fatalf("Failed to modify config: %v", err)
 	}

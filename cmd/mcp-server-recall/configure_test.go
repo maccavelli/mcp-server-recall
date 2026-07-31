@@ -10,9 +10,8 @@ import (
 )
 
 func TestConfigureCommand_Sandboxed(t *testing.T) {
-	// 1. Enforce strict sandboxing of XDG_CONFIG_HOME
-	tempDir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", tempDir)
+	// 1. Enforce strict sandboxing of the platform config root
+	base := sandboxConfigDir(t)
 
 	// Inject isolated config container successfully to bypass existingKey checks safely
 	Cfg = config.New("test-sandboxed")
@@ -39,9 +38,8 @@ func TestConfigureCommand_Sandboxed(t *testing.T) {
 		t.Fatalf("configureCmd failed natively: %v", err)
 	}
 
-	// 6. Assert the artifact correctly spawned inside our safe tempdir (XDG_CONFIG_HOME)
-	// and conclusively DID NOT deploy off-network laterally
-	expectedPath := filepath.Join(tempDir, config.Name, "recall.yaml")
+	// 6. Assert the artifact was written inside the sandboxed config root
+	expectedPath := filepath.Join(base, config.Name, "recall.yaml")
 
 	if _, err := os.Stat(expectedPath); os.IsNotExist(err) {
 		t.Fatalf("Configuration artifact was NOT written to the sandboxed path: %s", expectedPath)
