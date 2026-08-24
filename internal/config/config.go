@@ -19,13 +19,17 @@ import (
 	"github.com/spf13/viper"
 )
 
+// Identity and storage defaults for the recall server.
 const (
-	Name          = "mcp-server-recall"
+	// Name is the application name, used for config and data directory scoping.
+	Name = "mcp-server-recall"
+	// DefaultDBName is the directory name of the on-disk datastore.
 	DefaultDBName = ".mcp_recall"
-	EnvPrefix     = "MCP_RECALL"
+	// EnvPrefix is the prefix for configuration environment variables.
+	EnvPrefix = "MCP_RECALL"
 
-	// Logging: get_internal_logs defaults
-	DefaultLogLines = 25 // Default lines returned by get_internal_logs
+	// DefaultLogLines is the default number of lines returned by get_internal_logs.
+	DefaultLogLines = 25
 )
 
 // BatchConfig holds tunable options for SaveBatch and harvest/ingest operations.
@@ -172,6 +176,15 @@ func New(version string) *Config {
 			slog.Debug("no recall.yaml config file found; relying on defaults")
 		} else {
 			slog.Warn("error parsing recall.yaml", "error", err)
+			// A config written before the encryptionkey tag fix carries `!!null <hex>`, which
+			// typed decoding rejects — silently dropping a real key and opening the store
+			// unencrypted. Recover just that value; anything broader would mask genuine
+			// corruption. See docs/0001-MADR-encryptionkey-yaml-tag-round-trip.md.
+			if key := recoverNullTaggedKey(err, appConfigDir); key != "" {
+				v.Set("encryptionKey", key)
+				slog.Warn("recovered a legacy null-tagged encryptionkey; rewrite this config with `mcp-server-recall configure`",
+					"path", filepath.Join(appConfigDir, "recall.yaml"))
+			}
 		}
 	}
 
@@ -387,4 +400,27 @@ func (c *Config) DefaultPagination() int {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.state.DefaultPagination
+}
+
+// recoverNullTaggedKey salvages an encryptionkey that viper refused to decode because the node
+// carries an explicit !!null tag alongside a string value — the shape produced by versions of
+// `configure` prior to the tag fix. It returns "" unless the error is that specific decode
+// failure, so genuine corruption still surfaces as a parse error rather than being papered over.
+func recoverNullTaggedKey(readErr error, appConfigDir string) string {
+	if readErr == nil || !strings.Contains(readErr.Error(), "!!null") {
+		return ""
+	}
+	raw, err := os.ReadFile(filepath.Join(appConfigDir, "recall.yaml")) //nolint:gosec // wizard-managed path
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(raw), "\n") {
+		rest, ok := strings.CutPrefix(strings.TrimSpace(line), "encryptionkey:")
+		if !ok {
+			continue
+		}
+		rest = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(rest), "!!null"))
+		return strings.Trim(strings.TrimSpace(rest), `"'`)
+	}
+	return ""
 }

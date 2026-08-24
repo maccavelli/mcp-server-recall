@@ -17,7 +17,7 @@ dbpath: ""
 # A short organizational description of this memory pool
 description: Cross-Session RAG Memory Architecture
 # The 32-character hex key used to encrypt all memory entries symmetrically at rest
-encryptionkey: %s
+encryptionkey: %q
 # Default directory where database exports or internal reports are dumped
 # Leave empty to use OS temp directory (Linux: /tmp, macOS: /private/tmp, Windows: %%TEMP%%)
 exportdir: ""

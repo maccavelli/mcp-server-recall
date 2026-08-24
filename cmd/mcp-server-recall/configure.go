@@ -18,7 +18,13 @@ import (
 	"github.com/maccavelli/mcp-server-recall/internal/util"
 )
 
-var forceInit bool
+// encryptionKeyField is the YAML mapping key holding the database encryption key.
+const encryptionKeyField = "encryptionkey"
+
+var (
+	forceInit        bool
+	allowUnencrypted bool
+)
 
 var configureCmd = &cobra.Command{
 	Use:     "configure",
@@ -64,6 +70,14 @@ var configureCmd = &cobra.Command{
 			input = envKey
 			pterm.Success.Println("Encryption key securely loaded from RECALL_ENCRYPTION_KEY environment variable.")
 		} else if !term.IsTerminal(int(os.Stdin.Fd())) {
+			// Read from the parsed document, not Cfg: a config whose key carries a legacy
+			// !!null tag fails typed decode, so Cfg.EncryptionKey() is empty and would let a
+			// real key be silently discarded here.
+			if existingKeyFromNode(&rootNode) != "" && !allowUnencrypted {
+				return fmt.Errorf("refusing to overwrite an existing encryption key non-interactively; " +
+					"re-run attached to a terminal, set RECALL_ENCRYPTION_KEY, " +
+					"or pass --allow-unencrypted to intentionally disable encryption")
+			}
 			pterm.Warning.Println("Non-interactive terminal detected. Proceeding without encryption.")
 			input = ""
 		} else {
@@ -140,9 +154,11 @@ var configureCmd = &cobra.Command{
 			keyFound := false
 			for i := 0; i < len(mappingNode.Content)-1; i += 2 {
 				keyNode := mappingNode.Content[i]
-				valNode := mappingNode.Content[i+1]
-				if keyNode.Value == "encryptionkey" {
-					valNode.Value = input
+				if keyNode.Value == encryptionKeyField {
+					// Replace the node rather than mutating its Value: the template emits an
+					// empty encryptionkey, which parses as a !!null-tagged scalar, and that tag
+					// would otherwise survive and be re-emitted alongside the string.
+					mappingNode.Content[i+1] = newKeyScalar(input)
 					keyFound = true
 					break
 				}
@@ -150,8 +166,8 @@ var configureCmd = &cobra.Command{
 			if !keyFound {
 				// Add it if not present
 				mappingNode.Content = append(mappingNode.Content,
-					&yaml.Node{Kind: yaml.ScalarNode, Value: "encryptionkey"},
-					&yaml.Node{Kind: yaml.ScalarNode, Value: input},
+					&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: encryptionKeyField},
+					newKeyScalar(input),
 				)
 			}
 		}
@@ -223,7 +239,37 @@ func ensureInitialized(force bool) error {
 
 func init() {
 	configureCmd.Flags().BoolVarP(&forceInit, "force", "f", false, "Overwrite existing configuration file")
+	configureCmd.Flags().BoolVar(&allowUnencrypted, "allow-unencrypted", false,
+		"Permit a non-interactive run to disable encryption on a config that already has a key")
 	RootCmd.AddCommand(configureCmd)
+}
+
+// existingKeyFromNode reads encryptionkey straight from the parsed document. It deliberately
+// bypasses Cfg so the guard still sees a key that typed decoding rejected.
+func existingKeyFromNode(root *yaml.Node) string {
+	if root == nil || len(root.Content) == 0 {
+		return ""
+	}
+	mapping := root.Content[0]
+	for i := 0; i < len(mapping.Content)-1; i += 2 {
+		if mapping.Content[i].Value == encryptionKeyField {
+			return strings.TrimSpace(mapping.Content[i+1].Value)
+		}
+	}
+	return ""
+}
+
+// newKeyScalar returns a scalar node pinned to !!str for the encryption key. The tag and
+// quoted style are explicit rather than inferred: a 64-character hex key may be all decimal
+// digits, which YAML's implicit resolver types as a number. See
+// docs/0001-MADR-encryptionkey-yaml-tag-round-trip.md.
+func newKeyScalar(v string) *yaml.Node {
+	return &yaml.Node{
+		Kind:  yaml.ScalarNode,
+		Tag:   "!!str",
+		Style: yaml.DoubleQuotedStyle,
+		Value: v,
+	}
 }
 
 // forceBlockStyle recursively traverses the AST and clears the yaml.FlowStyle
