@@ -1,34 +1,31 @@
 # Platform installation
 
-This guide covers the v1.1.0 release installers, manual verified downloads, and
-current-source builds.
+This guide covers the supported v1.1.0 release installers, manual verified
+downloads, source builds, filesystem locations, upgrades, and troubleshooting
+for Linux, macOS, and Windows.
 
-## Release versus source
+## Installation at a glance
 
-The v1.1.0 release publishes:
+| Platform | Release target | One-line installer | Default binary directory |
+|---|---|---|---|
+| Linux x86-64 | `linux-amd64` | Yes | `$HOME/.local/bin` |
+| Linux arm64 | `linux-arm64` | Yes | `$HOME/.local/bin` |
+| macOS Apple silicon | `darwin-arm64` | Yes | `$HOME/.local/bin` |
+| macOS Intel | Not published | No | Source build only |
+| Windows x86-64 | `windows-amd64` | Yes | `%LOCALAPPDATA%\Programs\mcp-server-recall` |
+| Windows arm64 | Not published | Installer refuses emulation | Source build or intentional manual amd64 use |
 
-- Linux amd64 and arm64 binaries;
-- a macOS arm64 binary;
-- a Windows amd64 binary;
-- versioned and unversioned `SHA256SUMS` manifests;
-- POSIX and PowerShell bootstrap installers.
+Release binaries are built with `CGO_ENABLED=0`; running a prebuilt binary does
+not require Go. Go is required to build from source and by both Go-harvesting
+commands.
 
-Use the bootstrap installer for the shortest supported installation. Build from
-source when you need unreleased `main` behavior. Manual verified downloads are
-provided as a transparent fallback.
+## Recommended one-line installation
 
-## One-line installation
-
-### macOS or Linux
+### Linux or macOS
 
 ```bash
 curl -fsSL https://github.com/maccavelli/mcp-server-recall/releases/latest/download/install.sh | sh
 ```
-
-The POSIX installer defaults to `$HOME/.local/bin`, requires no `sudo`, verifies
-SHA-256, clears macOS quarantine when possible, and configures an encrypted
-datastore. Run a downloaded copy with `--help` for version pinning, a custom
-directory, dry-run, configuration opt-out, and uninstall options.
 
 ### Windows PowerShell
 
@@ -36,136 +33,254 @@ directory, dry-run, configuration opt-out, and uninstall options.
 irm https://github.com/maccavelli/mcp-server-recall/releases/latest/download/install.ps1 | iex
 ```
 
-The PowerShell installer defaults to
-`%LOCALAPPDATA%\Programs\mcp-server-recall`, verifies SHA-256, and configures an
-encrypted datastore without elevation. A downloaded copy supports `-Version`,
-`-InstallDir`, `-NoConfigure`, and `-WhatIf`.
+The installers:
+
+1. Detect the operating system and architecture.
+2. Download the unversioned alias for the selected release binary.
+3. Find its versioned entry in `SHA256SUMS` and verify the hash value.
+4. Move an existing binary to `.prev` before installing the replacement.
+5. Install per-user without `sudo` or administrator elevation.
+6. Run `configure --encrypt-db=true` unless configuration is disabled.
+
+Neither installer silently edits PATH. It prints the required PATH change when
+the destination is not already available to the current process or user.
+
+## Installer options
+
+### Linux and macOS options
+
+A command piped into `sh` cannot receive positional flags after the pipe. Use
+the installer environment variables instead.
+
+Pin v1.1.0:
+
+```bash
+curl -fsSL https://github.com/maccavelli/mcp-server-recall/releases/latest/download/install.sh \
+  | MCP_RECALL_VERSION=1.1.0 sh
+```
+
+Choose a different directory:
+
+```bash
+curl -fsSL https://github.com/maccavelli/mcp-server-recall/releases/latest/download/install.sh \
+  | MCP_RECALL_INSTALL_DIR="$HOME/bin" sh
+```
+
+Install without creating or updating configuration:
+
+```bash
+curl -fsSL https://github.com/maccavelli/mcp-server-recall/releases/latest/download/install.sh \
+  | MCP_RECALL_NO_CONFIGURE=1 sh
+```
+
+Disable datastore encryption during configuration only when that is an
+intentional local-security decision:
+
+```bash
+curl -fsSL https://github.com/maccavelli/mcp-server-recall/releases/latest/download/install.sh \
+  | MCP_RECALL_ENCRYPT_DB=false sh
+```
+
+For `--dry-run`, `--verbose`, `--uninstall`, or the complete help text,
+download the script before invoking it:
+
+```bash
+curl -fsSL -o /tmp/mcp-server-recall-install.sh \
+  https://github.com/maccavelli/mcp-server-recall/releases/latest/download/install.sh
+sh /tmp/mcp-server-recall-install.sh --dry-run
+sh /tmp/mcp-server-recall-install.sh --help
+```
+
+### Windows options
+
+The one-line PowerShell form uses defaults. To pass parameters, load the
+published script as a script block:
+
+```powershell
+$url = 'https://github.com/maccavelli/mcp-server-recall/releases/latest/download/install.ps1'
+$installer = [scriptblock]::Create((Invoke-RestMethod $url))
+& $installer -Version 1.1.0 `
+  -InstallDir (Join-Path $env:LOCALAPPDATA 'Programs\mcp-server-recall') `
+  -EncryptDb true
+```
+
+Useful parameters and environment values:
+
+| Setting | Effect |
+|---|---|
+| `-Version 1.1.0` | Download from the specified `vX.Y.Z` release instead of `latest`. |
+| `-InstallDir PATH` | Override the per-user program directory. |
+| `-EncryptDb false` | Configure without datastore encryption. |
+| `-NoConfigure` | Install the binary without running `configure`. |
+| `-WhatIf` | Show the intended source, target, and configuration action without downloading or writing. |
+| `$env:MCP_RECALL_ENCRYPT_DB` | Set the default encryption argument. |
+| `$env:MCP_RECALL_NO_CONFIGURE=1` | Skip configuration in the one-line form. |
 
 ## Requirements
 
-The prebuilt server binary has no Go or Cgo runtime dependency. Install Go when
-either condition applies:
+The bootstrap installers require HTTPS access to GitHub Releases.
 
-- you are building this repository; `go.mod` currently requires Go 1.26.5;
-- you will use `harvest projects` or `harvest standards`.
+Linux and macOS require:
 
-Go 1.26.5 packages for all three operating systems are available from the
+- POSIX `sh`;
+- `curl` or `wget`;
+- `awk` and `grep`;
+- `sha256sum`, `shasum`, or `openssl`;
+- `uname` and `mktemp`.
+
+Windows requires PowerShell 5.1 or later and uses `Invoke-WebRequest` plus
+`Get-FileHash`.
+
+Install the Go version declared by [`go.mod`](../../go.mod) when building from
+source or harvesting Go code. Current packages are available from the
 [official Go downloads page](https://go.dev/dl/).
 
-## Linux
+## Linux walkthrough
 
-### Supported architectures
+### Install and expose the binary
 
-- amd64: current release and source builds.
-- arm64: current release and source builds.
-
-### Manual verified binary
-
-```bash
-ARCH=amd64 # use arm64 on 64-bit ARM Linux
-mkdir -p "$HOME/.local/bin"
-curl -fL -o /tmp/mcp-server-recall \
-  "https://github.com/maccavelli/mcp-server-recall/releases/latest/download/mcp-server-recall-linux-${ARCH}"
-curl -fL -o /tmp/SHA256SUMS \
-  https://github.com/maccavelli/mcp-server-recall/releases/latest/download/SHA256SUMS
-grep " mcp-server-recall-linux-${ARCH}$" /tmp/SHA256SUMS \
-  | sed "s#mcp-server-recall-linux-${ARCH}#/tmp/mcp-server-recall#" \
-  | sha256sum -c -
-install -m 0755 /tmp/mcp-server-recall "$HOME/.local/bin/mcp-server-recall"
-```
-
-Add the install directory to PATH if needed:
+Run the recommended one-line installer. If it reports that
+`$HOME/.local/bin` is not on PATH, add it for the current shell:
 
 ```bash
 export PATH="$PATH:$HOME/.local/bin"
 ```
 
-Persist that line in the startup file for your shell.
+Persist the same line in the startup file used by your shell, such as
+`~/.profile`, `~/.bashrc`, or `~/.zshrc`.
 
-### Build current source
+### Manual verified download
+
+This fallback supports both release architectures and deliberately verifies by
+hash value. The manifest contains versioned filenames even though the download
+uses an unversioned alias.
 
 ```bash
-git clone https://github.com/maccavelli/mcp-server-recall.git
-cd mcp-server-recall
+case "$(uname -m)" in
+  x86_64|amd64) ARCH=amd64 ;;
+  aarch64|arm64) ARCH=arm64 ;;
+  *) echo "unsupported architecture: $(uname -m)" >&2; exit 1 ;;
+esac
+
 mkdir -p "$HOME/.local/bin"
-go build -trimpath -o "$HOME/.local/bin/mcp-server-recall" ./cmd/mcp-server-recall
+curl -fL -o /tmp/mcp-server-recall \
+  "https://github.com/maccavelli/mcp-server-recall/releases/latest/download/mcp-server-recall-linux-${ARCH}"
+curl -fL -o /tmp/mcp-server-recall-SHA256SUMS \
+  https://github.com/maccavelli/mcp-server-recall/releases/latest/download/SHA256SUMS
+
+EXPECTED=$(awk -v prefix="mcp-server-recall-linux-${ARCH}-" \
+  '$2 ~ ("^" prefix "[0-9]") { print $1; exit }' \
+  /tmp/mcp-server-recall-SHA256SUMS)
+ACTUAL=$(sha256sum /tmp/mcp-server-recall | awk '{print $1}')
+test -n "$EXPECTED" && test "$ACTUAL" = "$EXPECTED"
+install -m 0755 /tmp/mcp-server-recall "$HOME/.local/bin/mcp-server-recall"
 mcp-server-recall configure --encrypt-db=true
 ```
 
-Default locations:
+### Linux data locations
 
-| Data | Linux path |
+| Data | Default path |
 |---|---|
 | Configuration | `${XDG_CONFIG_HOME:-$HOME/.config}/mcp-server-recall/recall.yaml` |
-| Datastore and index | `${XDG_DATA_HOME:-$HOME/.local/share}/mcp-server-recall/.mcp_recall` |
+| Datastore and Bleve index | `${XDG_DATA_HOME:-$HOME/.local/share}/mcp-server-recall/.mcp_recall` |
 | Crash log | `${XDG_CACHE_HOME:-$HOME/.cache}/mcp-server-recall/crash.log` |
 
-If an MCP client cannot find Go, use the result of `command -v go` as
-`MCP_GO_BIN_PATH`.
+If a desktop MCP client cannot find Go, run `command -v go` in a terminal and
+use that absolute result as `MCP_GO_BIN_PATH` in the client configuration.
 
-## macOS
+## macOS walkthrough
 
-### Supported architectures
+### Supported hardware
 
-The project publishes Apple-silicon (`darwin-arm64`) builds. It does not publish
-an Intel (`darwin-amd64`) binary, even though the Go toolchain itself supports
-Intel macOS.
+The release and installer support Apple silicon (`arm64`). The project does not
+publish an Intel (`amd64`) macOS binary. Intel users can build locally with Go,
+but that target is not part of project release CI.
 
-### Manual verified Apple-silicon binary
+### Install and expose the binary
+
+Run the recommended one-line installer. It attempts to remove the downloaded
+binary's quarantine attribute when `xattr` is available. If needed, add the
+default directory to PATH:
+
+```bash
+export PATH="$PATH:$HOME/.local/bin"
+```
+
+### Manual verified download
 
 ```bash
 mkdir -p "$HOME/.local/bin"
 curl -fL -o /tmp/mcp-server-recall \
   https://github.com/maccavelli/mcp-server-recall/releases/latest/download/mcp-server-recall-darwin-arm64
-curl -fL -o /tmp/SHA256SUMS \
+curl -fL -o /tmp/mcp-server-recall-SHA256SUMS \
   https://github.com/maccavelli/mcp-server-recall/releases/latest/download/SHA256SUMS
-grep ' mcp-server-recall-darwin-arm64$' /tmp/SHA256SUMS \
-  | sed 's#mcp-server-recall-darwin-arm64#/tmp/mcp-server-recall#' \
-  | shasum -a 256 -c -
+
+EXPECTED=$(awk \
+  '$2 ~ /^mcp-server-recall-darwin-arm64-[0-9]/ { print $1; exit }' \
+  /tmp/mcp-server-recall-SHA256SUMS)
+ACTUAL=$(shasum -a 256 /tmp/mcp-server-recall | awk '{print $1}')
+test -n "$EXPECTED" && test "$ACTUAL" = "$EXPECTED"
 install -m 0755 /tmp/mcp-server-recall "$HOME/.local/bin/mcp-server-recall"
 xattr -d com.apple.quarantine "$HOME/.local/bin/mcp-server-recall" 2>/dev/null || true
-```
-
-Then add `$HOME/.local/bin` to PATH if it is not already present.
-
-### Build current source
-
-```bash
-git clone https://github.com/maccavelli/mcp-server-recall.git
-cd mcp-server-recall
-mkdir -p "$HOME/.local/bin"
-go build -trimpath -o "$HOME/.local/bin/mcp-server-recall" ./cmd/mcp-server-recall
 mcp-server-recall configure --encrypt-db=true
 ```
 
-Default locations:
+### macOS data locations
 
-| Data | macOS path |
+| Data | Default path |
 |---|---|
 | Configuration | `$HOME/Library/Application Support/mcp-server-recall/recall.yaml` |
-| Datastore and index | `$HOME/Library/Application Support/mcp-server-recall/.mcp_recall` |
+| Datastore and Bleve index | `$HOME/Library/Application Support/mcp-server-recall/.mcp_recall` |
 | Crash log | `$HOME/Library/Caches/mcp-server-recall/crash.log` |
 
-The official Go `.pkg` normally installs `go` at `/usr/local/go/bin/go`. GUI
-clients often have a smaller PATH than the terminal; set
-`MCP_GO_BIN_PATH=/usr/local/go/bin/go` in the MCP client configuration when
-harvesting fails only from the GUI.
+The official Go package normally installs the executable at
+`/usr/local/go/bin/go`. GUI applications often receive a smaller PATH than a
+terminal; use that absolute path as `MCP_GO_BIN_PATH` when harvesting fails only
+from a GUI client.
 
-## Windows
+## Windows walkthrough
 
-### Supported architectures
+### Supported hardware
 
-The project publishes Windows amd64. It does not publish Windows arm64; the
-PowerShell installer on `main` intentionally refuses to select an amd64 binary
-under emulation.
+The release and installer support Windows amd64. The installer intentionally
+refuses Windows arm64 rather than silently selecting an emulated amd64 binary.
+The project does not publish or run CI against a native Windows arm64 binary.
 
-### Manual verified amd64 binary
+### Install and expose the binary
 
-Run PowerShell 5.1 or later:
+Run the recommended PowerShell one-liner. The default binary is installed at:
+
+```text
+%LOCALAPPDATA%\Programs\mcp-server-recall\mcp-server-recall.exe
+```
+
+If the installer reports that the directory is missing from PATH, add it to the
+user PATH while preserving the existing value:
+
+```powershell
+$installDir = Join-Path $env:LOCALAPPDATA 'Programs\mcp-server-recall'
+$userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+$entries = @($userPath -split ';' | Where-Object { $_ })
+if ($entries -notcontains $installDir) {
+  [Environment]::SetEnvironmentVariable(
+    'Path',
+    (($entries + $installDir) -join ';'),
+    'User'
+  )
+}
+```
+
+Open a new terminal after changing PATH.
+
+### Manual verified download
+
+The release manifest uses the versioned name
+`mcp-server-recall-windows-amd64-X.Y.Z.exe`; verification therefore selects
+that prefix and compares its hash to the unversioned alias download.
 
 ```powershell
 $download = Join-Path $env:TEMP 'mcp-server-recall.exe'
-$sums = Join-Path $env:TEMP 'mcp-server-recall-SHA256SUMS'
+$sumsPath = Join-Path $env:TEMP 'mcp-server-recall-SHA256SUMS'
 $installDir = Join-Path $env:LOCALAPPDATA 'Programs\mcp-server-recall'
 
 Invoke-WebRequest `
@@ -173,67 +288,127 @@ Invoke-WebRequest `
   -OutFile $download
 Invoke-WebRequest `
   'https://github.com/maccavelli/mcp-server-recall/releases/latest/download/SHA256SUMS' `
-  -OutFile $sums
+  -OutFile $sumsPath
 
-$line = (Get-Content $sums | Select-String 'mcp-server-recall-windows-amd64.exe$').Line
-$expected = ($line -split '\s+')[0].ToLower()
+$prefix = 'mcp-server-recall-windows-amd64-'
+$line = Get-Content $sumsPath |
+  Where-Object { $_ -match [regex]::Escape($prefix) } |
+  Select-Object -First 1
+if (-not $line) { throw "No checksum entry found for $prefix" }
+
+$expected = (($line -split '\s+' | Where-Object { $_ })[0]).ToLower()
 $actual = (Get-FileHash $download -Algorithm SHA256).Hash.ToLower()
-if ($actual -ne $expected) { throw "SHA-256 mismatch: expected $expected, got $actual" }
+if ($actual -ne $expected) {
+  throw "SHA-256 mismatch: expected $expected, got $actual"
+}
 
 New-Item -ItemType Directory -Force -Path $installDir | Out-Null
 Move-Item -Force $download (Join-Path $installDir 'mcp-server-recall.exe')
+& (Join-Path $installDir 'mcp-server-recall.exe') configure --encrypt-db=true
 ```
 
-Add the directory to the user PATH, preserving its existing value:
+### Windows data locations
 
-```powershell
-$installDir = Join-Path $env:LOCALAPPDATA 'Programs\mcp-server-recall'
-$userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
-if (($userPath -split ';') -notcontains $installDir) {
-  [Environment]::SetEnvironmentVariable('Path', "$userPath;$installDir", 'User')
-}
+| Data | Default path |
+|---|---|
+| Configuration | `%APPDATA%\mcp-server-recall\recall.yaml` |
+| Datastore and Bleve index | `%LOCALAPPDATA%\mcp-server-recall\.mcp_recall` |
+| Crash log | `%LOCALAPPDATA%\mcp-server-recall\crash.log` |
+
+The official Go MSI normally places `go.exe` at
+`C:\Program Files\Go\bin\go.exe`. Use that absolute path as `MCP_GO_BIN_PATH`
+when a GUI client cannot inherit the system PATH.
+
+## Build current source
+
+Clone the repository and use the Go version declared by `go.mod`.
+
+Linux or macOS:
+
+```bash
+git clone https://github.com/maccavelli/mcp-server-recall.git
+cd mcp-server-recall
+mkdir -p "$HOME/.local/bin"
+go build -trimpath -o "$HOME/.local/bin/mcp-server-recall" ./cmd/mcp-server-recall
+"$HOME/.local/bin/mcp-server-recall" configure --encrypt-db=true
 ```
 
-Open a new PowerShell window, then configure:
-
-```powershell
-mcp-server-recall.exe configure --encrypt-db=true
-```
-
-### Build current source
+Windows PowerShell:
 
 ```powershell
 git clone https://github.com/maccavelli/mcp-server-recall.git
 Set-Location mcp-server-recall
 $installDir = Join-Path $env:LOCALAPPDATA 'Programs\mcp-server-recall'
 New-Item -ItemType Directory -Force -Path $installDir | Out-Null
-go build -trimpath -o (Join-Path $installDir 'mcp-server-recall.exe') ./cmd/mcp-server-recall
+go build -trimpath `
+  -o (Join-Path $installDir 'mcp-server-recall.exe') `
+  ./cmd/mcp-server-recall
 & (Join-Path $installDir 'mcp-server-recall.exe') configure --encrypt-db=true
 ```
 
-Default locations:
+An ordinary `go build` uses the source fallback version. Project release builds
+use the Makefile's `VERSION` linker setting to stamp the tag.
 
-| Data | Windows path |
-|---|---|
-| Configuration | `%APPDATA%\mcp-server-recall\recall.yaml` |
-| Datastore and index | `%LOCALAPPDATA%\mcp-server-recall\.mcp_recall` |
-| Crash log | `%LOCALAPPDATA%\mcp-server-recall\crash.log` |
+## Upgrade, pin, or remove
 
-The official Go MSI normally places `go.exe` under
-`C:\Program Files\Go\bin\go.exe`. Use that absolute path for
-`MCP_GO_BIN_PATH` when a GUI client cannot inherit the system PATH.
+Re-run the one-line installer to upgrade to the latest release. Existing Unix
+and Windows binaries are moved to a `.prev` file before replacement.
 
-## Configure and verify on every platform
+Pinning is performed by release version, without the leading `v`:
+
+```bash
+curl -fsSL https://github.com/maccavelli/mcp-server-recall/releases/latest/download/install.sh \
+  | MCP_RECALL_VERSION=1.1.0 sh
+```
+
+The Unix installer supports removal from its selected install directory:
+
+```bash
+curl -fsSL -o /tmp/mcp-server-recall-install.sh \
+  https://github.com/maccavelli/mcp-server-recall/releases/latest/download/install.sh
+sh /tmp/mcp-server-recall-install.sh --uninstall
+```
+
+Uninstall removes the binary and its `.prev` sibling. It intentionally leaves
+configuration, data, index, and log files in place. The PowerShell installer
+does not currently implement uninstall; stop the server and remove only its
+explicit program directory if removal is intended.
+
+## Verify the installation
+
+Open a new terminal if PATH was changed, then run:
 
 ```text
-mcp-server-recall configure --encrypt-db=true
 mcp-server-recall --version
 mcp-server-recall --help
 ```
 
-On PowerShell, append `.exe` if the program directory is not resolving through
-PATHEXT/PATH.
+The installer configures the datastore by default. If configuration was
+skipped, run:
 
-Next, follow [Client integration](client-integration.md) for stdio MCP or
-[Getting started](getting-started.md#standalone-local-service) for the local
-administrative service.
+```text
+mcp-server-recall configure --encrypt-db=true
+```
+
+Start the server in the foreground for a standalone smoke test:
+
+```text
+mcp-server-recall serve
+```
+
+Normally an MCP client launches `serve` over stdio. Continue with
+[Client integration](client-integration.md) or the
+[standalone local-service walkthrough](getting-started.md#standalone-local-service).
+
+## Troubleshooting
+
+| Symptom | Explanation and action |
+|---|---|
+| `mcp-server-recall: command not found` | Add the installer destination to PATH and open a new terminal. GUI clients should use the absolute binary path. |
+| Installer reports no checksum entry | Confirm the selected architecture is published and the requested release contains both its binary and `SHA256SUMS`. |
+| Checksum mismatch | Nothing is installed. Retry on a trusted network; do not bypass verification. |
+| Linux installer rejects the architecture | Only amd64 and arm64 are published; 32-bit ARM and other architectures are unsupported. |
+| macOS installer rejects `x86_64` | No Intel macOS release binary is published. Build from source with a compatible Go toolchain. |
+| Windows installer rejects ARM64 | No native Windows arm64 asset is published. The installer does not silently choose emulation. |
+| Installation succeeds but harvesting cannot find Go | Install Go and set `MCP_GO_BIN_PATH` to the absolute `go` or `go.exe` path in the MCP client environment. |
+| Port 47669 is already in use | Set the same `MCP_ENDPOINT_API_PORT` for `serve` and administrative CLI processes, or set `MCP_REC_URL` for the CLI. |
