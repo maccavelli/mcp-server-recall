@@ -1,6 +1,6 @@
 ---
 status: "accepted"
-date: 2026-08-23
+date: 2026-08-29
 decision-makers: maccavelli
 consulted: maccavelli
 informed: maccavelli
@@ -244,6 +244,76 @@ The decision is confirmed when all of the following hold:
 Implementation steps, verification commands, and rollback are in
 [0001-PLAN-encryptionkey-yaml-tag-round-trip.md](0001-PLAN-encryptionkey-yaml-tag-round-trip.md).
 
+### Post-implementation review (2026-08-29)
+
+This section records facts learned after the decision and implementation landed. It does not
+retroactively change the rationale above.
+
+#### Implementation and repository state
+
+* Commit `0f6074536a14db0176af598510265b4cac28db8d` implemented the decision and added
+  this MADR and its PLAN in the same commit on 2026-08-23.
+* That commit modified `cmd/mcp-server-recall/config_template.go`,
+  `cmd/mcp-server-recall/configure.go`, `cmd/mcp-server-recall/configure_test.go`,
+  `internal/config/config.go`, and `internal/config/config_test.go`.
+* As observed on 2026-08-29, `go test ./...`, `go build ./...`,
+  `GOOS=windows go build ./...`, `GOOS=linux go build ./...`, per-file `golint` on all five
+  changed Go files, and
+  `golangci-lint run -c .golangci.yml ./...` pass. `gofmt -l` produces no output for those
+  files.
+* Repository evidence does not establish that the live-host repair ran, that the datastore was
+  empty, that `serve` logged `encrypted=true`, or that a `v1.0.3` release was created. Those
+  claims remain unconfirmed.
+
+#### Recovery predicate is not as narrow as intended
+
+The implementation plan required legacy recovery to trigger only when the Viper error named
+both `encryptionkey` and `!!null`. That condition cannot be met by the reproduced error quoted
+in this MADR: the error contains `!!null` and the scalar value but does not identify the mapping
+key.
+
+The implementation at `internal/config/config.go:409-425` instead checks only whether the error
+text contains `!!null`. It then scans the file text for any top-level-looking line beginning with
+`encryptionkey:`, removes a leading `!!null` if present, and returns the remaining value. It does
+not establish that:
+
+* the decode error came from `encryptionkey` rather than another field;
+* the encryption-key node itself carries the `!!null` tag;
+* the recovered value is exactly 64 hexadecimal characters; or
+* the line belongs to the parsed top-level YAML mapping rather than a nested mapping or scalar
+  block whose text happens to begin with `encryptionkey:`.
+
+Consequently, an unrelated YAML decode error containing `!!null` can cause a normally tagged or
+otherwise invalid encryption-key line to be injected through `v.Set`. The original parse warning
+still appears, but the recovery warning incorrectly identifies the file as carrying a legacy
+null-tagged key. The positive test at `internal/config/config_test.go:34-56` proves recovery of
+the observed legacy shape; it does not constrain these false-positive cases.
+
+The required follow-up is to parse the raw document as a `yaml.Node`, locate the top-level
+`encryptionkey` value node, require that node's tag to be exactly `!!null`, and validate a
+non-empty 64-character hexadecimal value before calling `v.Set`. Negative tests must cover an
+unrelated `!!null` failure, a correctly tagged encryption key alongside an unrelated failure,
+a nested `encryptionkey`, and an invalid legacy value. This is a source-code follow-up and was
+not performed by the documentation-only review.
+
+#### Decision-boundary limitation
+
+The original record groups two distinct policies: deterministic YAML serialization and refusal
+to erase an existing key non-interactively. The considered options compare serialization
+strategies only; they do not compare alternatives for non-interactive behavior. The PLAN also
+introduced load-time legacy recovery without recording alternatives in this MADR. The accepted
+serialization decision remains clear, but the rationale for the clobber guard and recovery
+policy is incomplete. Any future change to either policy requires a new MADR rather than a
+silent rewrite of this accepted record.
+
+#### Workflow deviation
+
+The associated PLAN specified three phase commits and repository instructions require explicit
+plan approval before implementation. Git history shows the MADR, PLAN, tests, and implementation
+arriving together in the single commit named above. Git history cannot establish whether an
+external review or approval occurred, and the promised per-phase commit cadence did not occur.
+This is a historical process deviation; correcting documentation does not rewrite commit history.
+
 ### Open questions
 
 * **Struct tag casing.** `internal/config/config.go:58` declares
@@ -253,12 +323,13 @@ Implementation steps, verification commands, and rollback are in
   latent mismatch that turns into a defect when the decoder is reconfigured. The plan includes a
   test that pins the observed behaviour.
 
-* **Relationship to the empty datastore.** The live server reports zero records across all
-  namespaces while approximately 128 MB occupies `.mcp_recall/`. If that store was written
-  encrypted and is now opened without a key, the two observations could share this root cause.
-  This is a **hypothesis, not an established fact** — it has not been tested, and the store may
-  simply be empty. It is recorded here because it determines whether repair requires key
-  recovery or merely reconfiguration, and the plan gates destructive repair on answering it.
+* **Relationship to the empty datastore.** The original observation was that the live server
+  reported zero records across all namespaces while approximately 128 MB occupied
+  `.mcp_recall/`. If that store was written encrypted and is now opened without a key, the two
+  observations could share this root cause. This remains a **hypothesis, not an established
+  fact**: neither this repository nor its history contains the datastore inspection, service
+  logs, or operator attestation needed to resolve it. No live repair that replaces the key is
+  authorized by this record until that evidence is recorded.
 
 ### Evidence
 
@@ -267,3 +338,30 @@ Implementation steps, verification commands, and rollback are in
 * Absence of `recall.yaml.bak` after the failing run, establishing that the recovery branch at
   `configure.go:46` did not execute.
 * `configure_test.go:54-55`, establishing that only the blank-key path is asserted.
+* Commit `0f6074536a14db0176af598510265b4cac28db8d`, establishing that the decision,
+  plan, tests, and implementation landed together rather than in the planned phases.
+* `internal/config/config.go:409-425`, establishing the implemented recovery predicate and
+  line-oriented extraction behavior described in the post-implementation review.
+* `internal/config/config_test.go:34-56`, establishing that recovery has a positive test but no
+  negative test for false-positive recovery.
+
+### Related record (2026-08-29)
+
+Database location, the meaning of empty `dbpath`, and `configure`'s failure to materialize a
+Badger store are out of scope for this record. They are decided in
+[0002-MADR-configure-os-native-datastore-init.md](0002-MADR-configure-os-native-datastore-init.md).
+
+Live-host observations gathered while investigating 0002, distinct from this record's
+serialization decision:
+
+* `recall.yaml.pre-repair` exists at
+  `~/Library/Application Support/mcp-server-recall/recall.yaml.pre-repair` and still carries
+  the `!!null`-tagged key this record described.
+* The live `recall.yaml` now has a quoted `encryptionkey` (the 0001 serialization shape) and
+  an *absolute* `dbpath` under Application Support. The current wizard does not write that
+  absolute path; a fresh `configure` still emits `dbpath: ""`.
+* The live `.mcp_recall` directory is not empty of files: it contains `MANIFEST`, `LOCK`,
+  `KEYREGISTRY`, a sparse `000001.vlog`, `search_index/`, and `telemetry.ring`. Record
+  counts were not re-measured. `serve` `encrypted=true` was not re-verified in that pass.
+  The "empty datastore" open question above therefore remains open as to *records*, and is
+  closed as to *the directory having no Badger files*.

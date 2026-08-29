@@ -2,13 +2,49 @@
 
 Associated MADR: [0001-MADR-encryptionkey-yaml-tag-round-trip.md](0001-MADR-encryptionkey-yaml-tag-round-trip.md) (status: accepted)
 
+## Execution Status
+
+Last reviewed: 2026-08-29.
+
+Repository implementation exists in commit
+`0f6074536a14db0176af598510265b4cac28db8d` (`fix(configure): persist the encryption
+key as a typed YAML string`). The implementation, tests, this MADR, and this PLAN all landed in
+that one commit. This differs from the three phase commits specified under
+[Rollout and Rollback](#rollout-and-rollback).
+
+Status by outcome:
+
+| Outcome | Status | Repository evidence |
+|---|---|---|
+| Explicitly typed and quoted key serialization | implemented and verified | `configure.go:151-173`; `TestConfigure_KeyRoundTrips` |
+| Non-interactive clobber refusal | implemented and verified | `configure.go:72-82`; `TestConfigure_NonInteractiveRefusesToClobber` |
+| Explicit non-interactive opt-out | implemented and verified | `configure.go:240-243`; `TestConfigure_NonInteractiveAllowsExplicitOptOut` |
+| Positive recovery of the observed legacy key shape | implemented and verified | `config.go:173-188`; `TestConfig_RecoversNullTaggedKey` |
+| Narrow recovery that cannot trigger on unrelated `!!null` failures | not implemented or verified | `recoverNullTaggedKey` checks only for `!!null`; no negative recovery tests exist |
+| Live-host repair and `encrypted=true` confirmation | not established | `recall.yaml.pre-repair` exists and the live file now has a quoted key, but no `serve` log in this repository shows `encrypted=true`. Directory emptiness is false (see 0002); record-count emptiness is still unmeasured. |
+| Patch release | not completed at reviewed HEAD | no tag points at `0f60745`; latest reachable release tag is `v1.0.2` |
+
+Repository-local verification observed on 2026-08-29:
+
+* `go test ./...` passed.
+* `go build ./...` passed on the review host (`darwin/arm64`).
+* `GOOS=windows go build ./...` passed.
+* `GOOS=linux go build ./...` passed.
+* `gofmt -l` produced no output for all five changed Go files.
+* `golint` passed when invoked separately for each changed Go file.
+* `golangci-lint run -c .golangci.yml ./...` reported `0 issues`.
+
+The plan is therefore **implemented with a required recovery-narrowing follow-up**, not fully
+complete under its acceptance criteria.
+
 ## Goal
 
 An encryption key written by `mcp-server-recall configure` must be readable by the server on the
 next load, for every valid 64-character hex key, and no non-interactive invocation may destroy an
 existing key while reporting success.
 
-Done means all six acceptance criteria in [Verification](#verification) hold.
+Done means all seven acceptance criteria in [Verification](#verification) hold. Criterion 6 is
+currently unmet, and criterion 7 has no repository evidence.
 
 ## Scope
 
@@ -21,18 +57,24 @@ Done means all six acceptance criteria in [Verification](#verification) hold.
 | `cmd/mcp-server-recall/config_template.go` | 20 | `%s` → `%q` |
 | `cmd/mcp-server-recall/configure_test.go` | new tests | round-trip + clobber-refusal coverage |
 | `internal/config/config.go` | after 169 | recover a `!!null`-tagged key at load |
+| `internal/config/config_test.go` | new tests | positive and negative legacy-recovery coverage |
 
 Out of scope: the database location (that is
 [`mcplib` MADR 0002](../../mcplib/docs/0002-MADR-xdg-compliant-user-paths.md)), the keychain
 option, typed-struct marshalling, and any change to `internal/memory/badger.go`.
 
-## Preconditions
+## Historical Baseline and Preconditions
+
+This plan was authored against commit `5322425` and implemented by `0f60745`. The original
+baseline commands are retained below as historical execution context; they are not current
+instructions for reapplying an already-landed change.
 
 ```bash
 cd ~/gitrepos/go/mcp-server-recall
-git status --porcelain -uno          # must be empty
+git status --porcelain               # must be empty; do not hide untracked files
 git log --oneline -1                 # expect 5322425 build(deps): mcplib v1.0.1
-go build ./... && go test ./...      # must be green before starting
+go build ./...
+go test ./...                        # must be green before starting
 ```
 
 Baseline facts confirmed in this tree at `5322425`:
@@ -277,45 +319,95 @@ empty case renders `encryptionkey: ""` — which is exactly the first alternativ
 
 A file containing `encryptionkey: !!null <hex>` still fails typed decode after Steps 2-4,
 because nothing rewrites it. In `internal/config/config.go`, after `v.ReadInConfig()` at line
-169, detect this exact shape and recover:
+169 in the baseline, detect this exact shape and recover.
 
-* Trigger **only** when the error is a YAML decode error naming `encryptionkey` and `!!null`.
-* Re-read the file untyped, pull the scalar's string value, inject it via `v.Set("encryptionKey", …)`.
+The reproduced Viper error contains `!!null` and the scalar value but does **not** name the YAML
+mapping key. Do not require an error substring that the observed decoder does not emit. Instead:
+
+* Require the read error to identify a `!!null` decode mismatch before attempting recovery.
+* Re-read the file and unmarshal it into a `yaml.Node`. Do not extract the value with line-based
+  string matching.
+* Locate `encryptionkey` only in the document's top-level mapping.
+* Require its value node to be a scalar tagged exactly `!!null` with a non-empty value.
+* Require the value to be exactly 64 characters and require `hex.DecodeString` to succeed.
+* Only after all checks pass, inject the value via `v.Set("encryptionKey", …)`.
 * `slog.Warn` that the config carries a legacy null-tagged key and should be rewritten with
   `configure`.
 
 Keep this narrow. A broad "retry harder" fallback would mask genuine corruption, which is the
 opposite of the MADR's intent.
 
-### Step 6 — Repair the live host
+Add tests in `internal/config/config_test.go`:
 
-The operator has confirmed the datastore is empty, so no key recovery is required and
-`--force` carries no data risk here.
+* the observed top-level `encryptionkey: !!null <64-hex>` shape is recovered;
+* an unrelated `!!null` decode failure with a correctly tagged encryption key does not invoke
+  legacy recovery;
+* a nested `encryptionkey: !!null <64-hex>` is not recovered as the top-level key;
+* empty, non-hex, short, and long legacy values are rejected; and
+* a file without a `!!null` decode mismatch is not recovered.
+
+**Execution finding.** Commit `0f60745` implemented only the positive path. Its helper checks the
+error for `!!null`, scans trimmed lines for `encryptionkey:`, and does not validate the node tag,
+scope, length, or hexadecimal encoding. The negative cases above remain required follow-up work.
+
+### Step 6 — Live-host repair (blocked pending external evidence)
+
+Do not replace the live encryption key based on this plan. The repository does not contain
+evidence that the approximately 128 MB datastore is empty, unencrypted, disposable, or
+recoverable with the recorded key. It also does not identify the launchd service label. The
+earlier assertion that the operator had confirmed an empty datastore is unsupported by the
+available artifacts and is withdrawn.
+
+Before a separate live-host runbook can be approved, record all of the following outside the
+repository or in a deliberately redacted operational record:
+
+* the datastore disposition and whether its contents must be preserved;
+* whether the current store is encrypted and which key, if any, opens it;
+* the exact configuration path and a verified backup path;
+* the exact service label and restart command; and
+* the operator-approved rollback procedure.
+
+The only live command retained here is the non-destructive configuration backup. Its destination
+must not already exist:
 
 ```bash
-cp "$HOME/Library/Application Support/mcp-server-recall/recall.yaml"{,.pre-repair}
-make build-all && make install
-RECALL_ENCRYPTION_KEY=$(openssl rand -hex 32) mcp-server-recall configure
-grep -c '!!null' "$HOME/Library/Application Support/mcp-server-recall/recall.yaml"   # expect 0
-launchctl kickstart -k gui/$(id -u)/<magictools-service-label>
+test ! -e "$HOME/Library/Application Support/mcp-server-recall/recall.yaml.pre-repair"
+cp "$HOME/Library/Application Support/mcp-server-recall/recall.yaml" \
+   "$HOME/Library/Application Support/mcp-server-recall/recall.yaml.pre-repair"
+cmp "$HOME/Library/Application Support/mcp-server-recall/recall.yaml" \
+    "$HOME/Library/Application Support/mcp-server-recall/recall.yaml.pre-repair"
 ```
 
-Then confirm `serve` reports `encrypted=true` (`internal/memory/badger.go:336`).
+Generating a replacement key, installing a binary, modifying the live configuration, and
+restarting the service are intentionally absent until the external facts above are supplied.
 
 ## Verification
 
 ```bash
 cd ~/gitrepos/go/mcp-server-recall
 go test ./cmd/mcp-server-recall/ -run TestConfigure -v
-go test ./... && go build ./...
-GOOS=windows go build ./... && GOOS=linux go build ./...
+go test ./internal/config/ -run TestConfig_RecoversNullTaggedKey -v
+go test ./...
+go build ./...
+GOOS=windows go build ./...
+GOOS=linux go build ./...
 
 # pre-commit gate, per changed file
 gofmt -l cmd/mcp-server-recall/configure.go cmd/mcp-server-recall/config_template.go \
-         cmd/mcp-server-recall/configure_test.go internal/config/config.go
-golint  cmd/mcp-server-recall/configure.go internal/config/config.go
-golangci-lint run -c .golangci.yml ./...        # pinned v2.13.1
+         cmd/mcp-server-recall/configure_test.go internal/config/config.go \
+         internal/config/config_test.go
+golint cmd/mcp-server-recall/configure.go
+golint cmd/mcp-server-recall/config_template.go
+golint cmd/mcp-server-recall/configure_test.go
+golint internal/config/config.go
+golint internal/config/config_test.go
+golangci-lint run -c .golangci.yml ./... # pinned v2.13.1
 ```
+
+`gofmt -l` and every `golint` invocation must produce no output. `golint` is intentionally run
+once per file: combining files from the `main` and `config` packages in one invocation fails with
+`internal/config/config.go is in package config, not main` and does not perform the required
+per-file checks.
 
 End-to-end against a scratch HOME, never the live config:
 
@@ -341,32 +433,41 @@ Acceptance criteria — all must hold:
 4. `--allow-unencrypted` permits the blank-key path, and `TestConfigureCommand_Sandboxed` passes
    **unmodified**.
 5. `go test ./...`, all three `GOOS` builds, and `golangci-lint` are clean.
-6. On the host, `serve` logs `encrypted=true`.
+6. Legacy recovery passes every positive and negative case specified in Step 5 and cannot recover
+   a normally tagged, nested, malformed, short, long, or non-hex key merely because another
+   field caused a `!!null` decode error.
+7. If live repair is separately approved, its execution record establishes the datastore
+   disposition, records a verified configuration backup, identifies the exact service, and
+   captures the post-restart `encrypted=true` log from `internal/memory/badger.go:336`.
 
 ## Rollout and Rollback
 
-**Rollout.** One commit per step group — Steps 1-2 (serialization + tests), Step 3 (guard),
-Steps 4-5 (template + recovery) — each passing the pre-commit gate. Then Step 6 on the host.
-Nothing is pushed or tagged without explicit approval.
+**Intended rollout.** One commit per step group — Steps 1-2 (serialization + tests), Step 3
+(guard), Steps 4-5 (template + recovery) — each passing the pre-commit gate. Then Step 6 on the
+host after separate operational approval. Nothing is pushed or tagged without explicit approval.
 
-Release as a patch (`v1.0.3`) once verified. No repository imports `mcp-server-recall`, so there
-are no downstream consumers.
+**Actual repository rollout.** Commit `0f60745` combined the MADR, PLAN, all source changes, and
+all tests. It did not follow the intended phase cadence. Do not rewrite public history merely to
+manufacture the missing phases. Land the recovery-narrowing follow-up as its own reviewed phase
+after updating and approving its source-change plan. As of 2026-08-29, no release tag points at
+`0f60745`; release remains pending. This repository alone cannot establish whether downstream
+deployment or automation consumers exist.
 
-**Rollback.** Plain revert; no schema, file-location, or on-disk format changes. The previous
-binary reads anything the fixed binary writes — with the pre-existing caveat that it will again
-fail to decode a key it wrote itself.
+**Repository rollback.** Revert commit `0f60745`; no schema, file-location, or on-disk database
+format changed. The previous binary can parse the explicitly quoted string emitted by the fixed
+binary. Reverting also restores the defects recorded in the MADR, so do this only with an
+approved alternative mitigation.
 
-Config rollback is file-level:
+**Live configuration rollback.** As of 2026-08-29, `recall.yaml.pre-repair` exists next to the
+live configuration (observed while investigating recall MADR 0002). `scratchpad/recall.yaml.bak`
+is not present in this working tree. Restoring `recall.yaml.pre-repair` would reintroduce the
+`!!null`-tagged key this plan exists to eliminate; do not restore it unless recovering from a
+later, unrelated live-config failure, and only with an approved runbook that names the service
+to restart.
 
-* `scratchpad/recall.yaml.bak` — pre-diagnosis config, original key.
-* `recall.yaml.pre-repair` — created in Step 6.
-
-Restore with `cp` plus a service restart.
-
-**Residual risk.** With the datastore confirmed empty, there is no irreversible risk in this
-change. Should that change before execution — if the store is repopulated — Step 6 must first
-re-establish whether `.mcp_recall/` is encrypted, since a lost key makes an encrypted store
-unrecoverable.
+**Residual risk.** Repository-local serialization and guard changes are reversible. Live key
+replacement is potentially irreversible if existing data was encrypted with a different key.
+The datastore state is unresolved, so this plan makes no claim that live replacement is safe.
 
 ## Sequencing against mcplib MADR 0002
 
@@ -374,6 +475,17 @@ Both records edit `cmd/mcp-server-recall/config_template.go` and `internal/confi
 MADR 0002 additionally changes `configure.go:75` and `configure.go:210-211`, which locate and
 create the database directory under the config directory.
 
-Land this plan **first**: it is self-contained, needs no `mcplib` release, and its tests pin the
-key behaviour before path resolution moves underneath it. Rebase 0002 onto the result. Do not run
-both in the same working tree concurrently.
+This plan landed first in `0f60745`. Before executing mcplib MADR 0002, revalidate its assumptions
+against that commit and keep its path changes separate from the recovery-narrowing follow-up.
+Do not execute both change sets concurrently in the same working tree.
+
+## Sequencing against recall MADR 0002
+
+[0002-MADR-configure-os-native-datastore-init.md](0002-MADR-configure-os-native-datastore-init.md)
+covers empty `dbpath` → CWD, OS data-directory placement, and `configure` materializing a
+Badger store. It also edits `configure.go`, `config.go`, and `config_template.go`.
+
+Do not combine 0002 execution with this plan's remaining recovery-narrowing follow-up.
+0001's serialization and clobber-guard work is already on `main` at `0f60745`; 0002
+assumes that work remains. The recovery-narrowing follow-up in Step 5 stays with this
+record.
