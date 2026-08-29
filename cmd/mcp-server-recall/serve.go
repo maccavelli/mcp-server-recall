@@ -122,7 +122,11 @@ func init() {
 
 func runServe(ctx context.Context, logs *mcplib.LogBuffer, reader io.ReadCloser, writer io.WriteCloser) error {
 	bootStart := time.Now()
-	store, err := memory.NewMemoryStore(ctx, Cfg.GetDBPath(), Cfg.EncryptionKey(), Cfg.SearchLimit(), Cfg.BatchSettings())
+	dbPath := Cfg.GetDBPath()
+	if dbPath == "" || config.UnsafeDatabasePath(dbPath) {
+		return fmt.Errorf("failed to initialize storage: database path is not resolvable")
+	}
+	store, err := memory.NewMemoryStore(ctx, dbPath, Cfg.EncryptionKey(), Cfg.SearchLimit(), Cfg.BatchSettings())
 	if err != nil {
 		return fmt.Errorf("failed to initialize storage: %w", err)
 	}

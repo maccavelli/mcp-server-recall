@@ -218,6 +218,9 @@ func ensureInitialized(force bool) error {
 		}
 	}
 
+	if dirPath == "" {
+		return fmt.Errorf("failed to resolve config directory")
+	}
 	if err := os.MkdirAll(dirPath, 0700); err != nil {
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}

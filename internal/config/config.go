@@ -96,23 +96,25 @@ func New(version string) *Config {
 		slog.Warn("failed to bind encryption key environment variable", "error", err)
 	}
 
-	// Cross-compile safe OS mappings completely decoupled from unix tildes
-	configDir, err := os.UserConfigDir()
+	appConfigDir, err := ConfigDir()
 	if err != nil {
-		slog.Warn("failed to isolate OS UserConfigDir; falling back to current working directory", "error", err)
-		configDir = "."
+		slog.Error("failed to resolve user config directory; refusing CWD fallback", "error", err)
+		appConfigDir = ""
 	}
-	appConfigDir := filepath.Join(configDir, Name)
 	cfg.appConfigDir = appConfigDir
 
 	v.SetConfigName("recall")
 	v.SetConfigType("yaml")
-	v.AddConfigPath(appConfigDir)
+	if appConfigDir != "" {
+		v.AddConfigPath(appConfigDir)
+	}
 	v.AddConfigPath(".")
 
 	// Set Defaults
 	v.SetDefault("name", Name)
-	v.SetDefault("dbPath", filepath.Join(appConfigDir, DefaultDBName))
+	if def, defErr := DefaultDBPath(); defErr == nil {
+		v.SetDefault("dbPath", def)
+	}
 	v.SetDefault("exportDir", os.TempDir())
 	v.SetDefault("searchEnabled", true)
 	v.SetDefault("searchLimit", 25000)
@@ -257,12 +259,26 @@ func (c *Config) AuthorizedNamespaces() []string {
 func (c *Config) GetDBPath() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	p := c.state.DBPath
-	if filepath.IsAbs(p) {
-		return p
+	p := strings.TrimSpace(c.state.DBPath)
+	if p == "" {
+		def, err := DefaultDBPath()
+		if err != nil {
+			return ""
+		}
+		p = def
 	}
-	if abs, err := filepath.Abs(p); err == nil {
-		return abs
+	if !filepath.IsAbs(p) {
+		if p == "" {
+			return ""
+		}
+		abs, err := filepath.Abs(p)
+		if err != nil {
+			return ""
+		}
+		p = abs
+	}
+	if UnsafeDatabasePath(p) {
+		return ""
 	}
 	return p
 }

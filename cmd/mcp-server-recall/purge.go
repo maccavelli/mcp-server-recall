@@ -5,10 +5,13 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 
 	"github.com/pterm/pterm"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
+
+	"github.com/maccavelli/mcp-server-recall/internal/config"
 )
 
 var forceFlag bool
@@ -18,8 +21,11 @@ var purgeCmd = &cobra.Command{
 	Short: "Destructively clears the underlying datastore",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		dbPath := Cfg.GetDBPath()
-		if dbPath == "" || dbPath == "/" || dbPath == "." {
-			return fmt.Errorf("refusing to purge: invalid or dangerous database path: %s", dbPath)
+		if config.UnsafeDatabasePath(dbPath) || config.IsCWDOrParent(dbPath) {
+			return fmt.Errorf("refusing to purge: empty dbpath is not a purge target (path %q)", dbPath)
+		}
+		if _, err := os.Stat(filepath.Join(dbPath, "MANIFEST")); err != nil {
+			return fmt.Errorf("refusing to purge: %s is not a Badger store (missing MANIFEST): %w", dbPath, err)
 		}
 
 		// Safety guard: require explicit confirmation to prevent accidental data loss.

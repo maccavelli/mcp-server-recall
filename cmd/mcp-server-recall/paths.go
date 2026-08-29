@@ -2,8 +2,6 @@
 package main
 
 import (
-	"fmt"
-	"os"
 	"path/filepath"
 
 	"github.com/maccavelli/mcp-server-recall/internal/config"
@@ -15,12 +13,11 @@ import (
 //	macOS:   ~/Library/Application Support/mcp-server-recall/
 //	Windows: %AppData%\mcp-server-recall\
 func configDirPath() string {
-	configDir, err := os.UserConfigDir()
+	dir, err := config.ConfigDir()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to resolve user config directory (%v), falling back to current working directory\n", err)
-		configDir = "."
+		return ""
 	}
-	return filepath.Join(configDir, config.Name)
+	return dir
 }
 
 // configFilePath returns the full path to the recall.yaml configuration file.

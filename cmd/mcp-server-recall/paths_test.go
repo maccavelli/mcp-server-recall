@@ -41,12 +41,12 @@ func TestPaths(t *testing.T) {
 	}
 
 	// Test error branch — with both roots empty, UserConfigDir fails on any Unix.
+	// CWD is not an acceptable fallback for user configuration.
 	t.Setenv("XDG_CONFIG_HOME", "")
 	t.Setenv("HOME", "")
 
 	dir = configDirPath()
-	expectedFallback := filepath.Join(".", config.Name)
-	if dir != expectedFallback {
-		t.Errorf("expected fallback %s, got %s", expectedFallback, dir)
+	if dir != "" {
+		t.Errorf("expected empty config dir when HOME is unset, got %s", dir)
 	}
 }
