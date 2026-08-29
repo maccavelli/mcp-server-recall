@@ -10,7 +10,7 @@
 #   * verifies SHA-256 by VALUE, not filename
 #   * the whole body lives in main(), invoked on the last line
 #
-# Exit codes: 0 ok  1 usage/unsupported  2 download or verify failed
+# Exit codes: 0 ok  1 usage/unsupported  2 download, verify, or configure failed
 set -eu
 
 REPO_URL="https://github.com/maccavelli/mcp-server-recall/releases"
@@ -161,20 +161,40 @@ do_uninstall() {
     rm -f "${_t}.prev" 2>/dev/null || true
 }
 
+normalize_encrypt_db() {
+    case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" in
+        true|yes|1)  ENCRYPT_DB=true ;;
+        false|no|0)  ENCRYPT_DB=false ;;
+        *) die 1 "--encrypt-db must be true or false (got $1)" ;;
+    esac
+}
+
+run_configure() {
+    if [ "$NO_CONFIGURE" = 1 ]; then
+        log "configure skipped (--no-configure)"
+        return 0
+    fi
+    vlog "configure --encrypt-db=$ENCRYPT_DB"
+    "$INSTALL_DIR/$PRODUCT" configure --encrypt-db="$ENCRYPT_DB" ||
+        die 2 "configure --encrypt-db=$ENCRYPT_DB failed"
+}
+
 usage() {
     cat >&2 <<'EOF'
 mcp-server-recall Linux / macOS installer
 
-  install.sh [--version X.Y.Z] [--dir PATH] [--dry-run] [--verbose]
-             [--uninstall] [--help]
+  install.sh [--version X.Y.Z] [--dir PATH] [--encrypt-db=true|false]
+             [--no-configure] [--dry-run] [--verbose] [--uninstall] [--help]
 
 Piped invocation cannot take flags after `| sh`, so use the environment
 equivalents instead:
 
   MCP_RECALL_VERSION      same as --version
   MCP_RECALL_INSTALL_DIR  same as --dir           (default ~/.local/bin)
+  MCP_RECALL_ENCRYPT_DB   same as --encrypt-db    (default true)
+  MCP_RECALL_NO_CONFIGURE=1  same as --no-configure
 
-  curl -fsSL <url>/install.sh | MCP_RECALL_VERSION=1.0.3 sh
+  curl -fsSL <url>/install.sh | MCP_RECALL_ENCRYPT_DB=false sh
 EOF
 }
 
@@ -182,6 +202,8 @@ main() {
     INSTALL_DIR="${MCP_RECALL_INSTALL_DIR:-$HOME/.local/bin}"
     PIN_VERSION="${MCP_RECALL_VERSION:-}"
     BASE_URL="${MC_TEST_BASE_URL:-$REPO_URL}"
+    ENCRYPT_DB="${MCP_RECALL_ENCRYPT_DB:-true}"
+    NO_CONFIGURE="${MCP_RECALL_NO_CONFIGURE:-0}"
     DRY_RUN=0; VERBOSE=0; UNINSTALL=0
     RESOLVED_VER=""
 
@@ -189,6 +211,9 @@ main() {
         case "$1" in
             --version) PIN_VERSION="${2:?--version needs a value}"; shift 2 ;;
             --dir)     INSTALL_DIR="${2:?--dir needs a value}"; shift 2 ;;
+            --encrypt-db) normalize_encrypt_db "${2:?--encrypt-db needs true or false}"; shift 2 ;;
+            --encrypt-db=*) normalize_encrypt_db "${1#--encrypt-db=}"; shift ;;
+            --no-configure)       NO_CONFIGURE=1; shift ;;
             --dry-run)            DRY_RUN=1; shift ;;
             --verbose|-v)         VERBOSE=1; shift ;;
             --uninstall)          UNINSTALL=1; shift ;;
@@ -196,6 +221,7 @@ main() {
             *) usage; die 1 "unknown option: $1" ;;
         esac
     done
+    normalize_encrypt_db "$ENCRYPT_DB"
 
     PIN_VERSION="${PIN_VERSION#v}"
 
@@ -223,6 +249,11 @@ main() {
         log "  os:          $OS"
         log "  arch:        $ARCH"
         log "  install dir: $INSTALL_DIR"
+        if [ "$NO_CONFIGURE" = 1 ]; then
+            log "  configure:   skipped"
+        else
+            log "  configure:   --encrypt-db=$ENCRYPT_DB"
+        fi
         if [ -n "$PIN_VERSION" ]; then
             log "  source:      $BASE_URL/download/v$PIN_VERSION"
         else
@@ -241,10 +272,13 @@ main() {
     install_binary
     clear_quarantine
     check_path
+    run_configure
 
     log ""
     log "$PRODUCT ${RESOLVED_VER:-unknown} installed to $INSTALL_DIR"
-    log "next:    $INSTALL_DIR/$PRODUCT configure"
+    if [ "$NO_CONFIGURE" = 1 ]; then
+        log "next:    $INSTALL_DIR/$PRODUCT configure --encrypt-db=true"
+    fi
     exit 0
 }
 

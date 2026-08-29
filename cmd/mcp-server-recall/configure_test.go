@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/hex"
 	"os"
 	"path/filepath"
 	"strings"
@@ -54,6 +55,130 @@ func TestConfigureCommand_Sandboxed(t *testing.T) {
 
 	if !bytes.Contains(content, []byte("encryptionkey: \"\"")) && !bytes.Contains(content, []byte("encryptionkey: \n")) && !bytes.Contains(content, []byte("encryptionkey:  ")) && !bytes.Contains(content, []byte("encryptionkey:\n")) {
 		t.Errorf("Sanbox configuration artifact did not contain an explicitly blank encryptionkey entry")
+	}
+}
+
+func TestConfigure_EncryptDBTrueGeneratesKey(t *testing.T) {
+	base := sandboxConfigDir(t)
+	Cfg = config.New("test-encrypt-true")
+	encryptDBFlag = "true"
+	t.Cleanup(func() { encryptDBFlag = "" })
+
+	origStderr := os.Stderr
+	os.Stderr = os.NewFile(0, os.DevNull)
+	defer func() { os.Stderr = origStderr }()
+
+	if err := configureCmd.RunE(configureCmd, []string{}); err != nil {
+		t.Fatalf("configure --encrypt-db=true: %v", err)
+	}
+
+	content, err := os.ReadFile(filepath.Join(base, config.Name, "recall.yaml"))
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	line := grepLine(content, "encryptionkey")
+	got := strings.Trim(strings.TrimPrefix(line, "encryptionkey:"), ` "`)
+	if len(got) != 64 {
+		t.Fatalf("expected 64-hex key, got %q from %s", got, line)
+	}
+	if _, err := hex.DecodeString(got); err != nil {
+		t.Fatalf("generated key is not hex: %v", err)
+	}
+	reloaded := config.New("test-encrypt-true-reload")
+	if reloaded.EncryptionKey() != got {
+		t.Errorf("key did not round-trip: got %q want %q", reloaded.EncryptionKey(), got)
+	}
+	db := expectedDefaultDBPath(t)
+	if _, err := os.Stat(filepath.Join(db, "MANIFEST")); err != nil {
+		t.Errorf("MANIFEST missing under %s: %v", db, err)
+	}
+	if _, err := os.Stat(filepath.Join(db, "KEYREGISTRY")); err != nil {
+		t.Errorf("KEYREGISTRY missing under %s: %v", db, err)
+	}
+}
+
+func TestConfigure_EncryptDBFalseBlankKey(t *testing.T) {
+	base := sandboxConfigDir(t)
+	Cfg = config.New("test-encrypt-false")
+	encryptDBFlag = "false"
+	t.Cleanup(func() { encryptDBFlag = "" })
+
+	origStderr := os.Stderr
+	os.Stderr = os.NewFile(0, os.DevNull)
+	defer func() { os.Stderr = origStderr }()
+
+	if err := configureCmd.RunE(configureCmd, []string{}); err != nil {
+		t.Fatalf("configure --encrypt-db=false: %v", err)
+	}
+	content, err := os.ReadFile(filepath.Join(base, config.Name, "recall.yaml"))
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	if got := grepLine(content, "encryptionkey"); !strings.Contains(got, `encryptionkey: ""`) {
+		t.Errorf("expected blank key, got %s", got)
+	}
+}
+
+func TestConfigure_EncryptDBTrueKeepsExisting(t *testing.T) {
+	base := sandboxConfigDir(t)
+	Cfg = config.New("test-encrypt-keep")
+	key := strings.Repeat("c", 64)
+	t.Setenv("RECALL_ENCRYPTION_KEY", key)
+	encryptDBFlag = ""
+	if err := configureCmd.RunE(configureCmd, []string{}); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	t.Setenv("RECALL_ENCRYPTION_KEY", "")
+	encryptDBFlag = "true"
+	t.Cleanup(func() { encryptDBFlag = "" })
+	if err := configureCmd.RunE(configureCmd, []string{}); err != nil {
+		t.Fatalf("configure --encrypt-db=true with existing key: %v", err)
+	}
+	content, err := os.ReadFile(filepath.Join(base, config.Name, "recall.yaml"))
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if !strings.Contains(grepLine(content, "encryptionkey"), key) {
+		t.Errorf("existing key was rotated: %s", grepLine(content, "encryptionkey"))
+	}
+}
+
+func TestConfigure_EncryptDBFalseRefusesClobber(t *testing.T) {
+	base := sandboxConfigDir(t)
+	Cfg = config.New("test-encrypt-clobber")
+	t.Setenv("RECALL_ENCRYPTION_KEY", strings.Repeat("d", 64))
+	if err := configureCmd.RunE(configureCmd, []string{}); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	cfgPath := filepath.Join(base, config.Name, "recall.yaml")
+	before, err := os.ReadFile(cfgPath)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+
+	t.Setenv("RECALL_ENCRYPTION_KEY", "")
+	encryptDBFlag = "false"
+	t.Cleanup(func() { encryptDBFlag = "" })
+	if err := configureCmd.RunE(configureCmd, []string{}); err == nil {
+		t.Fatal("expected refusal when encrypt-db=false would blank an existing key")
+	}
+	after, err := os.ReadFile(cfgPath)
+	if err != nil {
+		t.Fatalf("read after: %v", err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Error("config modified despite refusal")
+	}
+}
+
+func TestConfigure_EncryptDBInvalid(t *testing.T) {
+	_ = sandboxConfigDir(t)
+	Cfg = config.New("test-encrypt-invalid")
+	encryptDBFlag = "maybe"
+	t.Cleanup(func() { encryptDBFlag = "" })
+	if err := configureCmd.RunE(configureCmd, []string{}); err == nil {
+		t.Fatal("expected error for --encrypt-db=maybe")
 	}
 }
 

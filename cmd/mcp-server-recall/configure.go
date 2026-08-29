@@ -27,6 +27,7 @@ const encryptionKeyField = "encryptionkey"
 var (
 	forceInit        bool
 	allowUnencrypted bool
+	encryptDBFlag    string
 )
 
 var configureCmd = &cobra.Command{
@@ -66,12 +67,40 @@ var configureCmd = &cobra.Command{
 
 		existingKey := Cfg.EncryptionKey()
 
+		encryptSet, encryptOn, encFlagErr := parseEncryptDBFlag(encryptDBFlag)
+		if encFlagErr != nil {
+			return encFlagErr
+		}
+
 		// Determine the new key
 		var input string
 		envKey, envName := encryptionKeyFromEnv()
 		if envKey != "" {
 			input = envKey
 			pterm.Success.Printf("Encryption key securely loaded from %s environment variable.\n", envName)
+		} else if encryptSet {
+			nodeKey := existingKeyFromNode(&rootNode)
+			if encryptOn {
+				if nodeKey != "" {
+					input = nodeKey
+					pterm.Success.Println("Valid encryption key already mapped in configuration.")
+				} else {
+					generated, genErr := generateEncryptionKey()
+					if genErr != nil {
+						return genErr
+					}
+					input = generated
+					pterm.Success.Println("Key generated securely.")
+				}
+			} else {
+				if nodeKey != "" && !allowUnencrypted {
+					return fmt.Errorf("refusing to overwrite an existing encryption key non-interactively; " +
+						"re-run attached to a terminal, set RECALL_ENCRYPTION_KEY, " +
+						"or pass --allow-unencrypted to intentionally disable encryption")
+				}
+				pterm.Info.Println("Encryption disabled (--encrypt-db=false).")
+				input = ""
+			}
 		} else if !term.IsTerminal(int(os.Stdin.Fd())) {
 			// Read from the parsed document, not Cfg: a config whose key carries a legacy
 			// !!null tag fails typed decode, so Cfg.EncryptionKey() is empty and would let a
@@ -137,11 +166,11 @@ var configureCmd = &cobra.Command{
 				}
 
 				if strings.HasPrefix(sel, "1") {
-					keyBytes := make([]byte, 32)
-					if _, err := rand.Read(keyBytes); err != nil {
-						return fmt.Errorf("error generating key: %w", err)
+					generated, genErr := generateEncryptionKey()
+					if genErr != nil {
+						return genErr
 					}
-					input = hex.EncodeToString(keyBytes)
+					input = generated
 					pterm.Success.Println("Key generated securely.")
 				} else {
 					result, inputErr := pterm.DefaultInteractiveTextInput.WithMask("*").Show("Paste 64-character Hex Key")
@@ -334,7 +363,30 @@ func init() {
 	configureCmd.Flags().BoolVarP(&forceInit, "force", "f", false, "Overwrite existing configuration file")
 	configureCmd.Flags().BoolVar(&allowUnencrypted, "allow-unencrypted", false,
 		"Permit a non-interactive run to disable encryption on a config that already has a key")
+	configureCmd.Flags().StringVar(&encryptDBFlag, "encrypt-db", "",
+		"Non-interactive encryption: true autogenerates a key, false disables encryption")
 	RootCmd.AddCommand(configureCmd)
+}
+
+func parseEncryptDBFlag(v string) (set bool, encrypt bool, err error) {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "":
+		return false, false, nil
+	case "true", "1", "yes":
+		return true, true, nil
+	case "false", "0", "no":
+		return true, false, nil
+	default:
+		return false, false, fmt.Errorf("--encrypt-db must be true or false (got %q)", v)
+	}
+}
+
+func generateEncryptionKey() (string, error) {
+	keyBytes := make([]byte, 32)
+	if _, err := rand.Read(keyBytes); err != nil {
+		return "", fmt.Errorf("error generating key: %w", err)
+	}
+	return hex.EncodeToString(keyBytes), nil
 }
 
 // existingKeyFromNode reads encryptionkey straight from the parsed document. It deliberately

@@ -76,13 +76,21 @@ installs under your home directory.
 curl -fsSL https://github.com/maccavelli/mcp-server-recall/releases/latest/download/install.sh | sh
 ```
 
-Piped flags cannot follow `| sh`. Use environment variables:
+That installs the binary and runs `configure --encrypt-db=true`, which autogenerates
+an AES-256 key and creates the datastore. Piped flags cannot follow `| sh`. Use
+environment variables:
 
 ```bash
 URL=https://github.com/maccavelli/mcp-server-recall/releases/latest/download/install.sh
 
 # pin a release
 curl -fsSL "$URL" | MCP_RECALL_VERSION=1.0.3 sh
+
+# unencrypted store
+curl -fsSL "$URL" | MCP_RECALL_ENCRYPT_DB=false sh
+
+# binary only; you run configure yourself
+curl -fsSL "$URL" | MCP_RECALL_NO_CONFIGURE=1 sh
 
 # install somewhere other than ~/.local/bin
 curl -fsSL "$URL" | MCP_RECALL_INSTALL_DIR=$HOME/bin sh

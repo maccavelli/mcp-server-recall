@@ -117,8 +117,9 @@ the GitHub Release next to the binaries, exactly as magic-cli-remote does.
 * Good, because a failed verify cannot clobber an existing install.
 * Neutral, because upgrades are re-running the one-liner, not an in-binary
   updater. Recall has no `update` subcommand.
-* Neutral, because the operator still runs `mcp-server-recall configure`
-  afterwards; the installer does not write `recall.yaml`.
+* Neutral, because the original installer did not write `recall.yaml`.
+  [0004](0004-MADR-installer-runs-configure.md) later has the installer invoke
+  `configure --encrypt-db` so a piped install finishes a usable store.
 * Bad, because a running Darwin process holding the old Mach-O must be
   renamed aside (`.prev`) rather than overwritten. The installer does that;
   it does not stop MagicTools or launchd for the operator.

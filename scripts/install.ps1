@@ -23,6 +23,8 @@
 param(
     [string]$Version,
     [string]$InstallDir,
+    [string]$EncryptDb = $(if ($env:MCP_RECALL_ENCRYPT_DB) { $env:MCP_RECALL_ENCRYPT_DB } else { 'true' }),
+    [switch]$NoConfigure,
     [string]$BaseUrl = 'https://github.com/maccavelli/mcp-server-recall/releases'
 )
 
@@ -117,9 +119,20 @@ if (-not $InstallDir) {
 Write-Log "source $urlDir"
 Write-Log "target windows/$arch -> $InstallDir"
 
+$encryptNorm = $EncryptDb.Trim().ToLower()
+switch ($encryptNorm) {
+    { $_ -in @('true', 'yes', '1') } { $encryptNorm = 'true' }
+    { $_ -in @('false', 'no', '0') } { $encryptNorm = 'false' }
+    default { throw "--encrypt-db must be true or false (got $EncryptDb)" }
+}
+if ($env:MCP_RECALL_NO_CONFIGURE -eq '1') { $NoConfigure = $true }
+Write-Log "configure --encrypt-db=$encryptNorm"
+
 if ($WhatIfPreference) {
     Write-Log "would download $urlDir/$Product-windows-$arch.exe"
     Write-Log "would install  $(Join-Path $InstallDir "$Product.exe")"
+    if ($NoConfigure) { Write-Log 'would skip configure' }
+    else { Write-Log "would run $Product configure --encrypt-db=$encryptNorm" }
     Write-Log 'nothing was downloaded (-WhatIf)'
     return
 }
@@ -164,8 +177,17 @@ unversioned alias assets.
     }
 
     Add-ToPathNotice -Dir $InstallDir
+    if (-not $NoConfigure) {
+        Write-Log "running $Product configure --encrypt-db=$encryptNorm"
+        & $target configure --encrypt-db=$encryptNorm
+        if ($LASTEXITCODE -ne 0) {
+            throw "configure --encrypt-db=$encryptNorm failed with exit $LASTEXITCODE"
+        }
+    } else {
+        Write-Log "configure skipped (-NoConfigure)"
+    }
     Write-Host ''
-    Write-Log "next: $Product configure"
+    Write-Log "installed $Product"
 } finally {
     Remove-Item -Path $tmp -Recurse -Force -ErrorAction SilentlyContinue
 }

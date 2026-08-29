@@ -32,7 +32,7 @@ mk_release() { # $1 = dir, $2 = arch, $3 = os (default linux), $4 = "corrupt"
     _corrupt=${4:-}
     case "${3:-}" in corrupt) _os=linux; _corrupt=corrupt ;; esac
     rel="$1/latest/download"; mkdir -p "$rel"
-    printf '#!/bin/sh\necho "%s version %s"\n' "$PRODUCT" "$VER" > "$rel/$PRODUCT-$_os-$2"
+    printf '#!/bin/sh\nif [ "$1" = configure ]; then printf "%%s\\n" "$*" > "$(dirname "$0")/.configure-args"; exit 0; fi\necho "%s version %s"\n' "$PRODUCT" "$VER" > "$rel/$PRODUCT-$_os-$2"
     chmod 0755 "$rel/$PRODUCT-$_os-$2"
     : > "$rel/SHA256SUMS"
     printf '%s  %s-%s-%s-%s\n' "$(sha_of "$rel/$PRODUCT-$_os-$2")" "$PRODUCT" "$_os" "$2" "$VER" >> "$rel/SHA256SUMS"
@@ -44,7 +44,7 @@ mk_release() { # $1 = dir, $2 = arch, $3 = os (default linux), $4 = "corrupt"
 
 mk_stubs() { # $1 = dir, $2 = uname -m value
     d="$1"; um="$2"; mkdir -p "$d"
-    for t in sh mktemp mkdir mv rm chmod cat grep awk cp id tail head find wc tr sed sleep basename; do
+    for t in sh mktemp mkdir mv rm chmod cat grep awk cp id tail head find wc tr sed sleep basename dirname; do
         p=$(command -v "$t" 2>/dev/null) || continue
         [ -e "$d/$t" ] || ln -sf "$p" "$d/$t"
     done
@@ -76,6 +76,7 @@ for pair in "x86_64 amd64" "amd64 amd64" "aarch64 arm64" "arm64 arm64"; do
     run_installer "$S" "$R" "$WORK/bin-arch-$m" --dry-run --verbose
     check "uname -m=$m maps to $want" "$(printf '%s\n' "$OUT" | grep -c "arch: *$want")" 1
     contains "  uname -m=$m reports os: linux" "$OUT" "os:          linux"
+    contains "  uname -m=$m default encrypt-db true" "$OUT" "configure:   --encrypt-db=true"
 done
 
 for m in armv7l armv6l armhf; do
@@ -160,6 +161,17 @@ run_installer "$BASE" "$R" "$D"
 check "re-run is idempotent (exit 0)" "$RC" 0
 check "  no temp dir left behind" "$(find "$D" -maxdepth 1 -name '.recall-install.*' | wc -l | tr -d ' ')" 0
 check "  previous binary kept as .prev" "$( [ -e "$D/${PRODUCT}.prev" ] && echo yes || echo no )" yes
+check "  configure invoked with encrypt-db=true" "$(cat "$D/.configure-args" 2>/dev/null || echo missing)" "configure --encrypt-db=true"
+
+D="$WORK/bin-no-cfg"
+run_installer "$BASE" "$R" "$D" --no-configure
+check "--no-configure does not invoke configure" "$( [ -e "$D/.configure-args" ] && echo yes || echo no )" no
+
+run_installer "$BASE" "$R" "$WORK/bin-enc-false" --encrypt-db=false
+check "--encrypt-db=false passed to configure" "$(cat "$WORK/bin-enc-false/.configure-args" 2>/dev/null || echo missing)" "configure --encrypt-db=false"
+
+run_installer "$BASE" - "$WORK/bin-bad-enc" --encrypt-db=maybe --dry-run
+check "invalid --encrypt-db exits 1" "$RC" 1
 
 last=$(tail -n 1 "$INSTALLER")
 check "script ends with main \"\$@\"" "$last" 'main "$@"'
