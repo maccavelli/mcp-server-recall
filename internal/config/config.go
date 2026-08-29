@@ -173,8 +173,7 @@ func New(version string) *Config {
 	})
 
 	if err := v.ReadInConfig(); err != nil {
-		var configFileNotFoundError viper.ConfigFileNotFoundError
-		if errors.As(err, &configFileNotFoundError) {
+		if _, ok := errors.AsType[viper.ConfigFileNotFoundError](err); ok {
 			slog.Debug("no recall.yaml config file found; relying on defaults")
 		} else {
 			slog.Warn("error parsing recall.yaml", "error", err)

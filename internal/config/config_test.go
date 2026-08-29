@@ -54,3 +54,23 @@ func TestConfig_RecoversNullTaggedKey(t *testing.T) {
 		t.Errorf("legacy null-tagged key not recovered:\n  got  %q\n  want %q", got, key)
 	}
 }
+
+func TestConfig_LowercaseYAMLKeysRoundTrip(t *testing.T) {
+	sandboxHome(t)
+	key := strings.Repeat("d", 64)
+	abs := filepath.Join(t.TempDir(), "explicit-store")
+	export := t.TempDir()
+	body := "dbpath: " + abs + "\nexportdir: " + export + "\nencryptionkey: \"" + key + "\"\n"
+	writeSandboxYAML(t, body)
+
+	c := New("test-mapstructure")
+	if got := c.GetDBPath(); got != abs {
+		t.Errorf("dbpath: got %q want %q", got, abs)
+	}
+	if got := c.ExportDir(); got != export {
+		t.Errorf("exportdir: got %q want %q", got, export)
+	}
+	if got := c.EncryptionKey(); got != key {
+		t.Errorf("encryptionkey: got %q want %q", got, key)
+	}
+}

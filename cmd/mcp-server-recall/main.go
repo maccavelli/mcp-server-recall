@@ -26,16 +26,16 @@ func main() {
 	if cacheDir, err := config.CacheDir(); err == nil {
 		crashDir = cacheDir
 	}
-	_ = os.MkdirAll(crashDir, 0755)
+	_ = os.MkdirAll(crashDir, 0o700)
 	crashPath := filepath.Join(crashDir, "crash.log")
 
-	f, err := os.OpenFile(crashPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0666)
+	f, err := os.OpenFile(crashPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err == nil {
 		fmt.Fprintf(f, "MAIN STARTING args: %v\n", os.Args)
 		f.Close()
 	}
 	defer func() {
-		if f2, err := os.OpenFile(crashPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0666); err == nil {
+		if f2, err := os.OpenFile(crashPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600); err == nil {
 			fmt.Fprintf(f2, "MAIN EXITED\n")
 			f2.Close()
 		}
