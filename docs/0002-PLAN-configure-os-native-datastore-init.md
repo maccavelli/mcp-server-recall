@@ -4,7 +4,33 @@ Associated MADR: [0002-MADR-configure-os-native-datastore-init.md](0002-MADR-con
 
 ## Execution Status
 
-Approved to execute 2026-08-29. Phases land as separate commits; nothing is pushed.
+Approved to execute 2026-08-29. All six phases are complete.
+
+| Phase | Status | Commit |
+|---|---|---|
+| 1 — failing tests | done | `00e4da6` |
+| 2 — empty `dbpath` / `purge` safety | done | `08b242b` |
+| 3 — platform data directory | done | `4f8eeb1` |
+| 4 — `configure` materializes the store | done | `34bfbe4` |
+| 5 — documentation | done | `988a048` |
+| 6 — Go 1.26.5 idioms on touched files | done | `1815fe8` (follow-up in this commit) |
+
+Phase 6 verification (2026-08-29):
+
+* `errors.AsType[viper.ConfigFileNotFoundError]` in `config.New`.
+* Crash-log and wizard paths use `0o700` / `0o600`.
+* `TestConfig_LowercaseYAMLKeysRoundTrip` pins lowercase YAML keys through `New`.
+* `config_extra_test.go` uses `t.Setenv`.
+* Path helpers do not print CWD-fallback warnings to stderr.
+* `gofmt -l cmd internal` is empty; per-file `golint` on Phase 6 files is clean;
+  `golangci-lint run -c .golangci.yml ./...` reports 0 issues.
+* `go test ./...`, `go build ./...`, and `GOOS=linux|windows|darwin` builds pass.
+* Scratch-HOME `configure` with `RECALL_ENCRYPTION_KEY` writes `dbpath: ""`, creates
+  `MANIFEST` and `KEYREGISTRY` under Application Support, does not write `MANIFEST`
+  to CWD, ignores Darwin `XDG_*`, and leaves the live host config byte-identical.
+
+`golint` still reports a name-stutter warning on `config.ConfigDir` in `dirs.go`
+(Phase 3). The MADR names are retained; `golangci-lint` (the repo gate) is clean.
 
 ## Goal
 

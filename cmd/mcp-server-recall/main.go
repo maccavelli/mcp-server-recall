@@ -12,13 +12,13 @@ import (
 func main() {
 	// Defense-in-depth: Unmanaged Standalone Fallbacks
 	if _, exists := os.LookupEnv("GOMEMLIMIT"); !exists {
-		os.Setenv("GOMEMLIMIT", "1024MiB")
+		_ = os.Setenv("GOMEMLIMIT", "1024MiB")
 	}
 	if _, exists := os.LookupEnv("GOMAXPROCS"); !exists {
-		os.Setenv("GOMAXPROCS", "2")
+		_ = os.Setenv("GOMAXPROCS", "2")
 	}
 
-	// Crash log uses os.UserCacheDir for user-scoped, symlink-safe paths.
+	// Crash log uses CacheDir for user-scoped, symlink-safe paths.
 	// Linux: ~/.cache/mcp-server-recall/crash.log
 	// macOS: ~/Library/Caches/mcp-server-recall/crash.log
 	// Windows: %LocalAppData%\mcp-server-recall\crash.log
