@@ -81,6 +81,8 @@ type MemoryStore struct {
 	ctx             context.Context // Parent context for background workers
 	stopGC          chan struct{}
 	closeOnce       sync.Once
+	cleanup         runtime.Cleanup
+	dbClosed        *atomic.Bool        // heap-allocated so AddCleanup can share it without pinning s
 	wg              sync.WaitGroup      // Tracks GC and audit goroutines for graceful shutdown
 	search          search.SearchEngine // Optional: Bleve full-text search layer
 	searchLimit     int                 // Max documents to index
@@ -301,11 +303,13 @@ func NewMemoryStore(ctx context.Context, dbPath string, encryptionKey string, se
 		"index_cache_mb", 256,
 	)
 
+	closed := new(atomic.Bool)
 	s := &MemoryStore{
 		db:              db,
 		ctx:             ctx,
 		stopGC:          make(chan struct{}),
 		stopAudit:       make(chan struct{}),
+		dbClosed:        closed,
 		searchLimit:     searchLimit,
 		maxBatchSize:    batchCfg.MaxBatchSize,
 		namespaceCounts: make(map[string]*atomic.Int64),
@@ -317,11 +321,16 @@ func NewMemoryStore(ctx context.Context, dbPath string, encryptionKey string, se
 		s.namespaceCounts[domain] = &atomic.Int64{}
 	}
 
-	// 🛡️ Deterministic mmap cleanup: Ensure BadgerDB unmaps all memory natively upon struct GC
-	runtime.AddCleanup(s, func(b *badger.DB) {
+	// Safety net for leaked stores. Close() must Stop this and take the same
+	// dbClosed CAS; otherwise GC closes the fd after Close and the next open
+	// (or the explicit Close) sees MANIFEST: bad file descriptor.
+	s.cleanup = runtime.AddCleanup(s, func(arg dbCloseArg) {
+		if !arg.closed.CompareAndSwap(false, true) {
+			return
+		}
 		slog.Warn("MemoryStore garbage collected, forcefully closing BadgerDB mmaps")
-		_ = b.Close() //nolint:errcheck // cleanup hook; close errors are non-actionable during GC
-	}, db)
+		_ = arg.db.Close() //nolint:errcheck // cleanup hook; close errors are non-actionable during GC
+	}, dbCloseArg{db: db, closed: closed})
 
 	// Start background maintenance
 	s.wg.Go(func() {
@@ -335,6 +344,13 @@ func NewMemoryStore(ctx context.Context, dbPath string, encryptionKey string, se
 
 	slog.Info("MemoryStore initialized with maintenance", "path", dbPath, "encrypted", encryptionKey != "")
 	return s, nil
+}
+
+// dbCloseArg is the AddCleanup payload. closed is allocated off the
+// MemoryStore so the cleanup does not pin s alive.
+type dbCloseArg struct {
+	db     *badger.DB
+	closed *atomic.Bool
 }
 
 // StartConfigWatcher launches the decoupled goroutine that deduplicates namespace events
@@ -2949,6 +2965,7 @@ func (s *MemoryStore) GetBatch(ctx context.Context, keys []string) (map[string]*
 func (s *MemoryStore) Close() error {
 	var err error
 	s.closeOnce.Do(func() {
+		s.cleanup.Stop()
 		close(s.stopGC)
 		close(s.stopAudit)
 
@@ -2977,8 +2994,11 @@ func (s *MemoryStore) Close() error {
 				slog.Warn("Failed to close search engine", "error", sErr)
 			}
 		}
-		err = s.db.Close()
+		if s.dbClosed.CompareAndSwap(false, true) {
+			err = s.db.Close()
+		}
 	})
+	runtime.KeepAlive(s)
 	return err
 }
 
@@ -3545,14 +3565,14 @@ func computeJaccard(a, b string) float64 {
 	return float64(inter) / float64(union)
 }
 
-// ExportJSONL iterates through the badger DB and streams each record as a JSON line
-// to the target file. It enforces os.O_EXCL to prevent overwriting existing files.
 func closeExportFile(f *os.File, stage string) {
 	if err := f.Close(); err != nil {
 		slog.Warn("failed to close export file", "stage", stage, "error", err)
 	}
 }
 
+// ExportJSONL iterates through the badger DB and streams each record as a JSON line
+// to the target file. It enforces os.O_EXCL to prevent overwriting existing files.
 func (s *MemoryStore) ExportJSONL(ctx context.Context, safePath string, filterCategory string, filterTags []string) (int, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
