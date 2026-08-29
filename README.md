@@ -114,7 +114,7 @@ mcp-server-recall configure --force
 mcp-server-recall configure
 ```
 
-Launches an interactive wizard powered by `pterm` to generate a secure AES-256-GCM encryption key or paste an existing one. Pass `--key <32-char-hex>` to configure non-interactively.
+Launches an interactive wizard powered by `pterm` to generate a secure AES-256-GCM encryption key or paste an existing one. For non-interactive setup, set `RECALL_ENCRYPTION_KEY` or `MCP_RECALL_ENCRYPTION_KEY` to a 64-character hex string (32 bytes). Pass `--allow-unencrypted` only to intentionally disable encryption when a key already exists.
 
 ---
 
@@ -194,7 +194,7 @@ You **must** pass the `serve` argument when configuring any IDE integration.
 
 ### `configure` (alias: `init`)
 
-Unifies the configuration flow. Creates or rewrites `recall.yaml` and initializes directories.
+Unifies the configuration flow. Creates or rewrites `recall.yaml`, creates the OS data directory, and materializes an empty Badger store (`MANIFEST`).
 
 ```bash
 mcp-server-recall configure [flags]
@@ -203,7 +203,9 @@ mcp-server-recall configure [flags]
 | Flag | Short | Description |
 |---|---|---|
 | `--force` | `-f` | Overwrites configuration and resets configuration settings to default. |
-| `--key` | `-k` | Directly provides the 32-character hex encryption key (bypasses prompts). |
+| `--allow-unencrypted` | | Permit a non-interactive run to disable encryption on a config that already has a key. |
+
+Non-interactive key input uses `RECALL_ENCRYPTION_KEY`, then `MCP_RECALL_ENCRYPTION_KEY`, then `MCP_RECALL_ENCRYPTIONKEY` (first non-empty wins). The value must be 64 hexadecimal characters.
 
 ---
 
@@ -368,7 +370,11 @@ For `harvest` operations, the Go compiler binary is resolved using the following
 
 ## Configuration Reference (`recall.yaml`)
 
-Default path: `~/.config/mcp-server-recall/recall.yaml`
+Default config path (OS-specific):
+
+* Linux: `~/.config/mcp-server-recall/recall.yaml`
+* macOS: `~/Library/Application Support/mcp-server-recall/recall.yaml`
+* Windows: `%APPDATA%\mcp-server-recall\recall.yaml`
 
 ```yaml
 # Internal HTTP API port (used by CLI tools and internal localhost HTTP clients)
@@ -377,13 +383,13 @@ apiport: 47669
 # Cosine similarity threshold for semantic deduplication (0.0–1.0)
 dedupthreshold: 0.8
 
-# Absolute path for BadgerDB + Bleve storage. Defaults to the configuration directory:
-#   Linux:   ~/.config/mcp-server-recall/.mcp_recall
+# Absolute path for BadgerDB + Bleve storage. Empty means the OS data directory:
+#   Linux:   ~/.local/share/mcp-server-recall/.mcp_recall
 #   macOS:   ~/Library/Application Support/mcp-server-recall/.mcp_recall
-#   Windows: %APPDATA%\mcp-server-recall\.mcp_recall
+#   Windows: %LocalAppData%\mcp-server-recall\.mcp_recall
 dbpath: ""
 
-# AES-256-GCM encryption key (32-character hex). Empty = encryption disabled.
+# AES-256-GCM encryption key (64-character hex / 32 bytes). Empty = encryption disabled.
 encryptionkey: ""
 
 # Directory for JSONL exports. Defaults to OS temp directory.
@@ -449,9 +455,9 @@ harvest:
 | Data | Linux | macOS | Windows |
 |---|---|---|---|
 | **Configuration** | `~/.config/mcp-server-recall/recall.yaml` | `~/Library/Application Support/mcp-server-recall/recall.yaml` | `%APPDATA%\mcp-server-recall\recall.yaml` |
-| **Database & Index** | `~/.config/mcp-server-recall/.mcp_recall` | `~/Library/Application Support/mcp-server-recall/.mcp_recall` | `%APPDATA%\mcp-server-recall\.mcp_recall` |
+| **Database & Index** | `~/.local/share/mcp-server-recall/.mcp_recall` | `~/Library/Application Support/mcp-server-recall/.mcp_recall` | `%LocalAppData%\mcp-server-recall\.mcp_recall` |
 | **JSONL Exports** | `exportdir` in config (defaults to `/tmp`) | `exportdir` in config (defaults to `/private/tmp`) | `exportdir` in config (defaults to `%TEMP%`) |
-| **Crash Logs** | `~/.config/mcp-server-recall/crash.log` | `~/Library/Application Support/mcp-server-recall/crash.log` | `%APPDATA%\mcp-server-recall\crash.log` |
+| **Crash Logs** | `~/.cache/mcp-server-recall/crash.log` | `~/Library/Caches/mcp-server-recall/crash.log` | `%LocalAppData%\mcp-server-recall\crash.log` |
 
 ---
 
@@ -459,6 +465,9 @@ harvest:
 
 | Variable | Description |
 |---|---|
+| `RECALL_ENCRYPTION_KEY` | 64-character hex AES-256 key consumed by `configure` (preferred alias). |
+| `MCP_RECALL_ENCRYPTION_KEY` | Same key; also bound by the server loader. |
+| `MCP_RECALL_ENCRYPTIONKEY` | Same key without the extra underscore. |
 | `MCP_GO_BIN_PATH` | Absolute path override to the Go binary. |
 | `MCP_REC_URL` | Explicit service endpoint URL override for Recall. |
 | `MCP_SOC_URL` | Explicit service endpoint URL override for Socratic-Thinker. |

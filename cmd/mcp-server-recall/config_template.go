@@ -4,7 +4,8 @@ package main
 // FullConfigTemplate is a curated, natively-commented YAML template representing the complete configuration Golden standard.
 // Viper's automated write destroys YAML comments; writing this explicit template prevents that.
 const FullConfigTemplate = `# --- General recall configuration settings --- 
-# The internal network port the server listens on (used by other MCP servers like brainstorm and go-refactor)
+# The internal network port the server listens on (used by other MCP servers like brainstorm and go-refactor).
+# Currently unused: the HTTP API port is MCP_ENDPOINT_API_PORT, else 47669.
 apiport: 18001
 # Cosine similarity threshold (0.0 to 1.0) above which documents are considered duplicates
 dedupthreshold: 0.8
@@ -16,7 +17,7 @@ dedupthreshold: 0.8
 dbpath: ""
 # A short organizational description of this memory pool
 description: Cross-Session RAG Memory Architecture
-# The 32-character hex key used to encrypt all memory entries symmetrically at rest
+# The 64-character hex key (32 bytes) used to encrypt all memory entries symmetrically at rest
 encryptionkey: %q
 # Default directory where database exports or internal reports are dumped
 # Leave empty to use OS temp directory (Linux: /tmp, macOS: /private/tmp, Windows: %%TEMP%%)
