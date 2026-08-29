@@ -503,7 +503,8 @@ func TestCloseExportFile(t *testing.T) {
 }
 
 func TestBadgerInternalFunctions(t *testing.T) {
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	m, err := NewMemoryStore(ctx, t.TempDir(), "", 10, config.BatchConfig{})
 	if err != nil {
 		t.Fatalf("Failed to init memory: %v", err)
@@ -513,10 +514,8 @@ func TestBadgerInternalFunctions(t *testing.T) {
 	// test SyncSearchIndex
 	m.SyncSearchIndex(ctx)
 
-	// test runGC by running it and cancelling
-	ctxCancel, cancel := context.WithCancel(ctx)
-	m.ctx = ctxCancel // Hack to inject cancelable context if possible, or just cancel it
-	go m.runGC()
+	// Stop the GC goroutine NewMemoryStore started. Do not swap s.ctx while
+	// runGC is reading it — that is a data race.
 	cancel()
 
 	// test DeleteStandards

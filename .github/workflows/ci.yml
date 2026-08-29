@@ -1,72 +1,334 @@
 name: CI
+
 on:
   push:
     branches: [main]
-    tags: ['v*']
+    tags:
+      - "v*"
   pull_request:
+  workflow_dispatch:
+
+# One run per ref; a new push to the same PR/branch cancels the older run.
+# Tag runs are never cancelled: the release job creates a GitHub Release and
+# then uploads assets, so a cancel between those steps leaves a published
+# release with missing artifacts.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
+
+# Prefer Node.js 24 LTS for JavaScript-based Actions. Do not use Node 20.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  NODE_VERSION: "24"
+
+permissions:
+  contents: read
 
 jobs:
-  validate:
+  # ---------------------------------------------------------------------------
+  # Go: format, tidy, vet, race, cgo-free tests, lint. Release binaries on tags.
+  # Conventions follow magic-cli-remote's Go jobs (no Flutter/Android here).
+  # ---------------------------------------------------------------------------
+  go:
+    name: Go (test; build on tag)
     runs-on: ubuntu-latest
+    timeout-minutes: 25
+    outputs:
+      version: ${{ steps.build.outputs.version }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js (LTS 24)
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          check-latest: true
+
+      - name: Assert Node.js major version
+        run: |
+          node -v
+          major="$(node -p "process.versions.node.split('.')[0]")"
+          test "$major" = "24" || { echo "expected Node 24, got $(node -v)" >&2; exit 1; }
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-      - run: go mod download
-      - run: go test ./...
-      - run: go vet ./...
-      - run: |
+          cache: true
+
+      - name: Gofmt
+        run: |
+          set -euo pipefail
+          unformatted="$(gofmt -l cmd internal)"
+          if [ -n "$unformatted" ]; then
+            echo "error: gofmt drift — run 'make fmt':" >&2
+            echo "$unformatted" >&2
+            exit 1
+          fi
+
+      - name: Go mod tidy is clean
+        run: |
+          set -euo pipefail
+          cp go.mod /tmp/go.mod.bak && cp go.sum /tmp/go.sum.bak
+          go mod tidy
+          if ! diff -q go.mod /tmp/go.mod.bak >/dev/null || ! diff -q go.sum /tmp/go.sum.bak >/dev/null; then
+            echo "error: go.mod/go.sum are not tidy — run 'go mod tidy' and commit" >&2
+            diff -u /tmp/go.mod.bak go.mod || true
+            diff -u /tmp/go.sum.bak go.sum || true
+            exit 1
+          fi
+
+      - name: Vet
+        run: go vet ./...
+
+      # Race-detected run over every package (magic-cli-remote Go convention).
+      - name: Test (race, all packages)
+        run: go test -race ./...
+
+      # Second pass: the exact pure-Go stack the linux release binary is built
+      # with (CGO_ENABLED=0). Race implies cgo; neither pass replaces the other.
+      - name: Test (cgo-free, all packages)
+        run: CGO_ENABLED=0 go test ./...
+
+      - name: Lint
+        run: |
+          set -euo pipefail
           go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.1
           GOLANGCI_LINT="$(go env GOPATH)/bin/golangci-lint" make lint
 
-  build:
-    needs: validate
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
+      - name: Build release binaries
+        id: build
+        if: github.ref_type == 'tag'
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "error: tag '$TAG' is not vX.Y.Z" >&2
+            exit 1
+          fi
+          VER="${TAG#v}"
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+
+          make build-all VERSION="$TAG"
+
+          mkdir -p dist
+          f="dist/mcp-server-recall-linux-amd64"
+          test -f "$f" || { echo "error: missing $f" >&2; exit 1; }
+          got="$("./$f" --version 2>&1 | awk '{print $NF}')"
+          test "$got" = "$VER" || {
+            echo "error: linux-amd64 reports '$got', expected '$VER'" >&2
+            exit 1
+          }
+
+          for bin in dist/mcp-server-recall-*; do
+            case "$bin" in *SHA256SUMS*) continue ;; esac
+            if ! go version -m "$bin" | grep -q '^	build	CGO_ENABLED=0$'; then
+              echo "error: $bin is not CGO_ENABLED=0 — refusing to publish" >&2
+              go version -m "$bin" | grep -i cgo >&2 || true
+              exit 1
+            fi
+            echo "ok: $bin is cgo-free"
+          done
+
+          (
+            cd dist
+            rm -f SHA256SUMS SHA256SUMS.tmp
+            set --
+            for f in *; do
+              [ -f "$f" ] || continue
+              set -- "$@" "$f"
+            done
+            [ "$#" -gt 0 ] || { echo "no build artifacts to checksum" >&2; exit 1; }
+            sha256sum "$@" > SHA256SUMS.tmp
+            mv SHA256SUMS.tmp SHA256SUMS
+            cat SHA256SUMS
+          )
+          ls -lh dist/
+          {
+            echo "### Go binaries"
+            echo "Stamped: \`$VER\` from tag \`$TAG\`"
+            echo "Platforms: linux/amd64, linux/arm64, darwin/arm64, windows/amd64"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Go binaries
+        if: github.ref_type == 'tag'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          # full history so `git describe --tags` stamps the version correctly
-          fetch-depth: 0
-      - uses: actions/setup-go@v7
+          name: mcp-server-recall-${{ steps.build.outputs.version || github.sha }}
+          path: dist/
+          if-no-files-found: error
+
+  # Native execution for the non-amd64-Linux targets. Cross-compiling proves a
+  # target links; only running it proves it works.
+  go-native:
+    name: Go (${{ matrix.label }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: ubuntu-24.04-arm, label: linux/arm64, shell: bash }
+          - { runner: windows-latest, label: windows/amd64, shell: bash }
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    env:
+      CGO_ENABLED: "0"
+    defaults:
+      run:
+        shell: ${{ matrix.shell }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-      - run: make build-all
-      - name: Checksum build artifacts
-        working-directory: dist
-        run: |
-          # Drop stale manifests before globbing so a re-run (or a restored
-          # cache) can never hash a previous run's output. The file list is
-          # frozen into the positional parameters BEFORE any redirect exists,
-          # otherwise the shell would create SHA256SUMS.tmp first and the glob
-          # would pick it up. Glob order is already sorted, so the manifest is
-          # deterministic without GNU-only find/sort extensions.
-          rm -f SHA256SUMS SHA256SUMS.tmp
-          set --
-          for f in *; do
-            [ -f "$f" ] || continue
-            set -- "$@" "$f"
-          done
-          [ "$#" -gt 0 ] || { echo "no build artifacts to checksum" >&2; exit 1; }
-          sha256sum "$@" > SHA256SUMS.tmp
-          mv SHA256SUMS.tmp SHA256SUMS
-          cat SHA256SUMS
-      - uses: actions/upload-artifact@v7
-        with:
-          name: ${{ github.event.repository.name }}
-          path: dist/
+          cache: true
 
+      - name: Build
+        run: go build ./...
+
+      - name: Vet
+        run: go vet ./...
+
+      # No -race: off darwin it forces CGO_ENABLED=1. Race coverage is the
+      # ubuntu-latest pass above.
+      - name: Test
+        run: go test ./...
+
+  # Execute the published non-amd64-Linux binaries on real hardware.
+  smoke-native:
+    name: Smoke (${{ matrix.label }})
+    if: github.ref_type == 'tag'
+    needs: [go]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: ubuntu-24.04-arm, label: linux/arm64, suffix: linux-arm64, ext: "" }
+          - { runner: windows-latest, label: windows/amd64, suffix: windows-amd64, ext: ".exe" }
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    steps:
+      - name: Download Go binaries
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: mcp-server-recall-${{ needs.go.outputs.version || github.sha }}
+          path: dist
+
+      - name: Smoke binaries
+        shell: bash
+        env:
+          VER: ${{ needs.go.outputs.version }}
+          SUFFIX: ${{ matrix.suffix }}
+          EXT: ${{ matrix.ext }}
+        run: |
+          set -euo pipefail
+          f="dist/mcp-server-recall-${SUFFIX}${EXT}"
+          test -f "$f" || { echo "error: $f missing from the artifact" >&2; exit 1; }
+          chmod +x "$f" || true
+          got="$("./$f" --version 2>&1 | awk '{print $NF}')"
+          test "$got" = "$VER" || {
+            echo "error: $f reports '$got', expected '$VER'" >&2; exit 1; }
+          echo "ok: $f $got"
+
+  # Publish release assets — tag runs only. No rebuild: downloads artifacts
+  # after go, go-native, and smoke-native are green.
   release:
-    needs: build
-    if: startsWith(github.ref, 'refs/tags/v')
+    name: Publish Release assets
+    if: github.ref_type == 'tag'
+    needs: [go, go-native, smoke-native]
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v8
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          name: ${{ github.event.repository.name }}
-          path: dist
-      - uses: softprops/action-gh-release@v3
+          go-version-file: go.mod
+          cache: false
+
+      - name: Download Go binaries
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          files: dist/*
+          name: mcp-server-recall-${{ needs.go.outputs.version || github.sha }}
+          path: go-bin
+
+      - name: Attach to GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          TAG="${{ github.ref_name }}"
+          VER="${{ needs.go.outputs.version || github.sha }}"
+          NAME="mcp-server-recall"
+
+          chmod +x go-bin/${NAME}-* || true
+
+          (cd go-bin && sha256sum -c SHA256SUMS)
+
+          for f in go-bin/${NAME}-*; do
+            case "$f" in *SHA256SUMS*) continue ;; esac
+            if ! go version -m "$f" | grep -q '^	build	CGO_ENABLED=0$'; then
+              echo "error: $f is not CGO_ENABLED=0 — refusing to publish" >&2
+              go version -m "$f" | grep -i cgo >&2 || true
+              exit 1
+            fi
+            echo "ok: $f is cgo-free"
+          done
+
+          f="go-bin/${NAME}-linux-amd64"
+          if [ -f "$f" ]; then
+            got="$("./$f" --version 2>&1 | awk '{print $NF}')"
+            if [ "$got" != "$VER" ]; then
+              echo "error: linux-amd64 reports version '$got', expected '$VER'" >&2
+              exit 1
+            fi
+            echo "ok: linux-amd64 $got"
+          fi
+
+          ASSETS=()
+          for f in go-bin/${NAME}-*; do
+            b="$(basename "$f")"
+            case "$b" in
+              SHA256SUMS) continue ;;
+              *.exe) out="${b%.exe}-${VER}.exe" ;;
+              *)     out="${b}-${VER}" ;;
+            esac
+            cp -f "$f" "$out"
+            ASSETS+=("$out")
+          done
+
+          SUMS="SHA256SUMS-${VER}"
+          sha256sum "${ASSETS[@]}" > "$SUMS"
+          ASSETS+=("$SUMS")
+
+          for f in ${NAME}-*-"${VER}"*; do
+            [ -f "$f" ] || continue
+            case "$f" in
+              SHA256SUMS*) continue ;;
+            esac
+            base="${f%%-"${VER}"*}"
+            ext="${f#*-"${VER}"}"
+            alias_name="${base}${ext}"
+            cp -f "$f" "$alias_name"
+            ASSETS+=("$alias_name")
+          done
+          cp -f "$SUMS" SHA256SUMS
+          ASSETS+=("SHA256SUMS")
+
+          ls -lh "${ASSETS[@]}"
+          cat "$SUMS"
+
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --generate-notes --title "$TAG"
+          fi
+          gh release upload "$TAG" "${ASSETS[@]}" --clobber

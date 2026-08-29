@@ -8,7 +8,7 @@ GOPATH_BIN     := $(shell go env GOPATH)/bin
 GOLANGCI_LINT  ?= $(GOPATH_BIN)/golangci-lint
 FLEET_LINT_CFG := .golangci.yml
 
-.PHONY: all build clean test run install version build-all linux darwin-arm64 windows-amd64 help fmt vet lint
+.PHONY: all build clean test run install version build-all linux linux-arm64 darwin-arm64 windows-amd64 help fmt vet lint
 
 all: help build-all
 
@@ -16,11 +16,15 @@ build: ## Compiles the Go application for the local OS/Arch
 	@mkdir -p $(DIST_DIR)
 	@CGO_ENABLED=0 go build -trimpath -tags netgo -ldflags "-extldflags '-static' -s -w -X main.RawVersion=$(VERSION)" -o $(DIST_DIR)/$(BINARY_NAME)-$(shell go env GOOS)-$(shell go env GOARCH)$(if $(filter windows,$(shell go env GOOS)),.exe,) ./cmd/$(BINARY_NAME)
 
-build-all: linux darwin-arm64 windows-amd64 ## Compiles for multiple platforms
+build-all: linux linux-arm64 darwin-arm64 windows-amd64 ## Compiles for multiple platforms
 
 linux: ## Compiles for Linux AMD64
 	@mkdir -p $(DIST_DIR)
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -tags netgo -ldflags "-extldflags '-static' -s -w -X main.RawVersion=$(VERSION)" -o $(DIST_DIR)/$(BINARY_NAME)-linux-amd64 ./cmd/$(BINARY_NAME)
+
+linux-arm64: ## Compiles for Linux ARM64
+	@mkdir -p $(DIST_DIR)
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -tags netgo -ldflags "-extldflags '-static' -s -w -X main.RawVersion=$(VERSION)" -o $(DIST_DIR)/$(BINARY_NAME)-linux-arm64 ./cmd/$(BINARY_NAME)
 
 darwin-arm64: ## Compiles for macOS ARM64
 	@mkdir -p $(DIST_DIR)
