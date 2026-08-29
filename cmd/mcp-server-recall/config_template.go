@@ -9,10 +9,10 @@ apiport: 18001
 # Cosine similarity threshold (0.0 to 1.0) above which documents are considered duplicates
 dedupthreshold: 0.8
 # The absolute physical path where BadgerDB and Bleve persist their state to disk.
-# Leave empty to use the OS default config directory alongside this file:
-#   Linux:   ~/.config/mcp-server-recall/.mcp_recall
+# Leave empty to use the OS default data directory:
+#   Linux:   ~/.local/share/mcp-server-recall/.mcp_recall
 #   macOS:   ~/Library/Application Support/mcp-server-recall/.mcp_recall
-#   Windows: %%AppData%%\mcp-server-recall\.mcp_recall
+#   Windows: %%LocalAppData%%\mcp-server-recall\.mcp_recall
 dbpath: ""
 # A short organizational description of this memory pool
 description: Cross-Session RAG Memory Architecture

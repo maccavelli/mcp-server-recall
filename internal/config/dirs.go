@@ -31,9 +31,21 @@ func CacheDir() (string, error) {
 	return filepath.Join(base, Name), nil
 }
 
+// DataDir returns the application-scoped user data directory.
+func DataDir() (string, error) {
+	base, err := dataDirBase()
+	if err != nil {
+		return "", err
+	}
+	if !filepath.IsAbs(base) {
+		return "", fmt.Errorf("user data directory is not absolute: %q", base)
+	}
+	return filepath.Join(base, Name), nil
+}
+
 // DefaultDBPath returns the greenfield default Badger directory.
 func DefaultDBPath() (string, error) {
-	dir, err := ConfigDir()
+	dir, err := DataDir()
 	if err != nil {
 		return "", err
 	}

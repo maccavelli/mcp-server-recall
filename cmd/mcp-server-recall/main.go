@@ -23,8 +23,8 @@ func main() {
 	// macOS: ~/Library/Caches/mcp-server-recall/crash.log
 	// Windows: %LocalAppData%\mcp-server-recall\crash.log
 	crashDir := filepath.Join(os.TempDir(), config.Name) // fallback
-	if cacheDir, err := os.UserCacheDir(); err == nil {
-		crashDir = filepath.Join(cacheDir, config.Name)
+	if cacheDir, err := config.CacheDir(); err == nil {
+		crashDir = cacheDir
 	}
 	_ = os.MkdirAll(crashDir, 0755)
 	crashPath := filepath.Join(crashDir, "crash.log")

@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/pterm/pterm"
@@ -86,7 +85,14 @@ var configureCmd = &cobra.Command{
 			}
 
 			// Check DB dir
-			dbDir := filepath.Join(configDirPath(), config.DefaultDBName)
+			dbDir := Cfg.GetDBPath()
+			if dbDir == "" {
+				var resolveErr error
+				dbDir, resolveErr = config.DefaultDBPath()
+				if resolveErr != nil {
+					return fmt.Errorf("resolve database directory: %w", resolveErr)
+				}
+			}
 			entries, dirErr := os.ReadDir(dbDir)
 			if dirErr != nil {
 				return fmt.Errorf("read database directory: %w", dirErr)
@@ -225,9 +231,10 @@ func ensureInitialized(force bool) error {
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
 
-	// Create DB directory inside config directory
-	dbDir := filepath.Join(dirPath, config.DefaultDBName)
-	if mkErr := os.MkdirAll(dbDir, 0700); mkErr != nil {
+	dbDir, dbErr := config.DefaultDBPath()
+	if dbErr != nil {
+		pterm.Warning.Printf("failed to resolve db directory: %v\n", dbErr)
+	} else if mkErr := os.MkdirAll(dbDir, 0700); mkErr != nil {
 		pterm.Warning.Printf("failed to create db directory %s: %v\n", dbDir, mkErr)
 	}
 
