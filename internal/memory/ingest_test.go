@@ -136,7 +136,7 @@ func TestDeleteByPath(t *testing.T) {
 		t.Errorf("expected error when search engine not set")
 	}
 
-	engine, err := search.InitStorage(tmpDir)
+	engine, err := search.InitStorage(t.TempDir())
 	if err != nil {
 		t.Fatalf("InitStorage failed: %v", err)
 	}

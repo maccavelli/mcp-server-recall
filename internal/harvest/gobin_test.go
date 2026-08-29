@@ -20,7 +20,7 @@ func TestGoBin(t *testing.T) {
 
 	tmpDir := t.TempDir()
 
-	goBinName := "go"
+	goBinName := goBinaryName()
 	dummyGo := filepath.Join(tmpDir, goBinName)
 	if err := os.WriteFile(dummyGo, []byte("#!/bin/sh\n"), 0755); err != nil {
 		t.Fatalf("failed to create dummy go: %v", err)
@@ -52,7 +52,7 @@ func TestGoBin(t *testing.T) {
 		fakeRoot := filepath.Join(tmpDir, "fakegoroot")
 		binDir := filepath.Join(fakeRoot, "bin")
 		os.MkdirAll(binDir, 0755)
-		fakeGo := filepath.Join(binDir, "go")
+		fakeGo := filepath.Join(binDir, goBinaryName())
 		os.WriteFile(fakeGo, []byte("#!/bin/sh\n"), 0755)
 
 		os.Setenv("GOROOT", fakeRoot)
@@ -103,7 +103,8 @@ func TestGoBin(t *testing.T) {
 func TestGoEnv(t *testing.T) {
 	goBinOnce = sync.Once{}
 
-	t.Setenv("MCP_GO_BIN_PATH", "/test/fake/path/go")
+	override := filepath.Join(t.TempDir(), goBinaryName())
+	t.Setenv("MCP_GO_BIN_PATH", override)
 	env := goEnv()
 	if env == nil {
 		t.Error("expected non-nil environment")
@@ -111,8 +112,9 @@ func TestGoEnv(t *testing.T) {
 
 	// Now check if it mutated PATH
 	path := os.Getenv("PATH")
-	if !strings.Contains(path, "/test/fake/path") {
-		t.Errorf("expected PATH to contain /test/fake/path, got %s", path)
+	wantDir := filepath.Dir(override)
+	if !strings.Contains(path, wantDir) {
+		t.Errorf("expected PATH to contain %s, got %s", wantDir, path)
 	}
 
 	// Test without MCP_GO_BIN_PATH

@@ -20,10 +20,20 @@ TMP_DIR=""
 log()  { printf '%s\n' "$*" >&2; }
 warn() { printf 'warning: %s\n' "$*" >&2; }
 die()  { printf 'error: %s\n' "$2" >&2; exit "$1"; }
-vlog() { [ "${VERBOSE:-0}" = 1 ] && printf '  %s\n' "$*" >&2 || true; }
+vlog() {
+    if [ "${VERBOSE:-0}" = 1 ]; then
+        printf '  %s\n' "$*" >&2
+    fi
+}
 
-# shellcheck disable=SC2329  # invoked indirectly via trap
-cleanup() { [ -n "$TMP_DIR" ] && [ -d "$TMP_DIR" ] && rm -rf "$TMP_DIR" || true; }
+# Invoked via trap. SC2329 is unused-function (newer shellcheck);
+# SC2317 is unreachable (apt/debian shellcheck).
+# shellcheck disable=SC2329,SC2317
+cleanup() {
+    if [ -n "$TMP_DIR" ] && [ -d "$TMP_DIR" ]; then
+        rm -rf "$TMP_DIR"
+    fi
+}
 
 have() { command -v "$1" >/dev/null 2>&1; }
 

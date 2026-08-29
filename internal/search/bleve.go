@@ -361,6 +361,9 @@ func (e *BleveEngine) IndexBatch(docs map[string]*Document) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
+	if e.index == nil {
+		return fmt.Errorf("bleve engine is closed")
+	}
 	batch := e.index.NewBatch()
 	for id, doc := range docs {
 		if err := batch.Index(id, toBleveDoc(doc)); err != nil {

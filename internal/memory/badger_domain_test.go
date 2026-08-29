@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/maccavelli/mcp-server-recall/internal/config"
 )
@@ -76,8 +77,20 @@ func TestMemoryStore_DomainManagement(t *testing.T) {
 		t.Errorf("expected 1 purged standard, got %d", purged)
 	}
 
-	// 6. Test PruneDomain
-	_, _ = store.Save(ctx, "std:3", "std3", "standard data 3", "HarvestedCode", nil, DomainStandards, 0)
+	// 6. Test PruneDomain. Pin UpdatedAt in the past: daysOld=0 means
+	// "UpdatedAt before now", and Windows clock resolution can make a
+	// just-written record compare equal to time.Now() (Before is false).
+	_, _, err = store.SaveBatch(ctx, []BatchEntry{{
+		Title:     "std:3",
+		Key:       "std3",
+		Value:     "standard data 3",
+		Category:  "HarvestedCode",
+		Domain:    DomainStandards,
+		UpdatedAt: time.Now().Add(-time.Hour),
+	}})
+	if err != nil {
+		t.Fatalf("SaveBatch for prune seed: %v", err)
+	}
 	pruned, err := store.PruneDomain(ctx, DomainStandards, 0)
 	if err != nil {
 		t.Fatalf("PruneDomain failed: %v", err)

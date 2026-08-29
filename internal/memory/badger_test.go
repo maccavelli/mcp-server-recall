@@ -309,8 +309,13 @@ func TestSaveBatch_Success(t *testing.T) {
 	}
 	defer store.Close()
 
-	engine, _ := search.InitStorage(tmpDir)
-	_ = store.SetSearchEngine(context.Background(), engine)
+	engine, err := search.InitStorage(t.TempDir())
+	if err != nil {
+		t.Fatalf("InitStorage: %v", err)
+	}
+	if err := store.SetSearchEngine(context.Background(), engine); err != nil {
+		t.Fatalf("SetSearchEngine: %v", err)
+	}
 
 	ctx := context.Background()
 	entries := []BatchEntry{
@@ -698,8 +703,13 @@ func TestUpdateRecord(t *testing.T) {
 	defer store.Close()
 	ctx := context.Background()
 
-	engine, _ := search.InitStorage(tmpDir)
-	_ = store.SetSearchEngine(ctx, engine)
+	engine, err := search.InitStorage(t.TempDir())
+	if err != nil {
+		t.Fatalf("InitStorage: %v", err)
+	}
+	if err := store.SetSearchEngine(ctx, engine); err != nil {
+		t.Fatalf("SetSearchEngine: %v", err)
+	}
 
 	originalContent := "The quick brown fox jumps over the lazy dog."
 	_, err = store.Save(ctx, "Title", "update-key-1", originalContent, "cat1", []string{"tag1"}, DomainStandards, 0)

@@ -6,6 +6,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"sync"
 )
 
@@ -31,9 +33,11 @@ func resolveGoBin() string {
 			return
 		}
 
+		name := goBinaryName()
+
 		// 2. Derive from GOROOT if set
 		if root := os.Getenv("GOROOT"); root != "" {
-			candidate := filepath.Join(root, "bin", "go")
+			candidate := filepath.Join(root, "bin", name)
 			if isExecutable(candidate) {
 				slog.Info("go toolchain resolved via GOROOT", "path", candidate)
 				goBin = candidate
@@ -48,17 +52,18 @@ func resolveGoBin() string {
 			return
 		}
 		candidates := []string{
-			filepath.Join(home, "sdk", "go1.26.5", "bin", "go"),
-			filepath.Join(home, "sdk", "go1.26.1", "bin", "go"),
-			filepath.Join(home, "sdk", "go1.25.0", "bin", "go"),
-			filepath.Join(home, ".local", "go", "bin", "go"),
-			filepath.Join(home, "go", "bin", "go"),
-			"/usr/local/go/bin/go",
-			"/usr/lib/go/bin/go",
+			filepath.Join(home, "sdk", "go1.26.5", "bin", name),
+			filepath.Join(home, "sdk", "go1.26.1", "bin", name),
+			filepath.Join(home, "sdk", "go1.25.0", "bin", name),
+			filepath.Join(home, ".local", "go", "bin", name),
+			filepath.Join(home, "go", "bin", name),
+		}
+		if !runningOnWindows() {
+			candidates = append(candidates, "/usr/local/go/bin/go", "/usr/lib/go/bin/go")
 		}
 
 		// Glob for any sdk/go* directories so version upgrades are picked up automatically
-		if matches, err := filepath.Glob(filepath.Join(home, "sdk", "go*", "bin", "go")); err == nil {
+		if matches, err := filepath.Glob(filepath.Join(home, "sdk", "go*", "bin", name)); err == nil {
 			candidates = append(matches, candidates...)
 		}
 
@@ -83,13 +88,44 @@ func resolveGoBin() string {
 	return goBin
 }
 
+func runningOnWindows() bool {
+	return runtime.GOOS == "windows"
+}
+
+func goBinaryName() string {
+	if runningOnWindows() {
+		return "go.exe"
+	}
+	return "go"
+}
+
 // isExecutable reports whether path exists and is a regular executable file.
+// Windows has no Unix execute bit; PATHEXT decides whether a file is runnable.
 func isExecutable(path string) bool {
 	info, err := os.Stat(path) //nolint:gosec // candidate go binary paths are from a fixed allowlist
 	if err != nil {
 		return false
 	}
-	return info.Mode().IsRegular() && info.Mode()&0o111 != 0
+	if !info.Mode().IsRegular() {
+		return false
+	}
+	if !runningOnWindows() {
+		return info.Mode()&0o111 != 0
+	}
+	ext := filepath.Ext(path)
+	if ext == "" {
+		return false
+	}
+	pathext := os.Getenv("PATHEXT")
+	if pathext == "" {
+		pathext = ".COM;.EXE;.BAT;.CMD"
+	}
+	for _, pe := range strings.Split(pathext, ";") {
+		if strings.EqualFold(pe, ext) {
+			return true
+		}
+	}
+	return false
 }
 
 // goEnv returns os.Environ() with the resolved Go binary's parent directory

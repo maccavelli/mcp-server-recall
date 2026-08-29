@@ -251,7 +251,7 @@ func TestSearchSessions(t *testing.T) {
 	}
 	defer db.Close()
 
-	engine, _ := search.InitStorage(tmpDir)
+	engine, _ := search.InitStorage(t.TempDir())
 	_ = db.SetSearchEngine(ctx, engine)
 
 	_, _ = db.Save(ctx, "session1-title", "sess1", "session content 1", "cat1", []string{"tag1", "project:proj1", "outcome:success", "trace:ctx1"}, DomainSessions, 0.9)
@@ -364,7 +364,7 @@ func TestExtraFunctions(t *testing.T) {
 	}
 	defer db.Close()
 
-	engine, err := search.InitStorage(tmpDir)
+	engine, err := search.InitStorage(t.TempDir())
 	if err == nil {
 		_ = db.SetSearchEngine(context.Background(), engine)
 	}
@@ -826,7 +826,7 @@ func TestIndexSaveRecordToSearch(t *testing.T) {
 	require.NoError(t, err)
 	defer db.Close()
 
-	engine, err := search.InitStorage(tmpDir)
+	engine, err := search.InitStorage(t.TempDir())
 	require.NoError(t, err)
 	_ = db.SetSearchEngine(ctx, engine)
 	require.NotNil(t, db.search)
