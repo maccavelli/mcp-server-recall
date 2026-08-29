@@ -2,10 +2,13 @@
 package main
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/pterm/pterm"
@@ -14,6 +17,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/maccavelli/mcp-server-recall/internal/config"
+	"github.com/maccavelli/mcp-server-recall/internal/memory"
 	"github.com/maccavelli/mcp-server-recall/internal/util"
 )
 
@@ -64,10 +68,10 @@ var configureCmd = &cobra.Command{
 
 		// Determine the new key
 		var input string
-		envKey := os.Getenv("RECALL_ENCRYPTION_KEY")
+		envKey, envName := encryptionKeyFromEnv()
 		if envKey != "" {
 			input = envKey
-			pterm.Success.Println("Encryption key securely loaded from RECALL_ENCRYPTION_KEY environment variable.")
+			pterm.Success.Printf("Encryption key securely loaded from %s environment variable.\n", envName)
 		} else if !term.IsTerminal(int(os.Stdin.Fd())) {
 			// Read from the parsed document, not Cfg: a config whose key carries a legacy
 			// !!null tag fails typed decode, so Cfg.EncryptionKey() is empty and would let a
@@ -95,7 +99,11 @@ var configureCmd = &cobra.Command{
 			}
 			entries, dirErr := os.ReadDir(dbDir)
 			if dirErr != nil {
-				return fmt.Errorf("read database directory: %w", dirErr)
+				if errors.Is(dirErr, os.ErrNotExist) {
+					entries = nil
+				} else {
+					return fmt.Errorf("read database directory: %w", dirErr)
+				}
 			}
 			if len(entries) > 0 && existingKey != "" {
 				pterm.Warning.Println("Changing the encryption key will render existing database contents irrecoverable!")
@@ -188,14 +196,31 @@ var configureCmd = &cobra.Command{
 		if err := util.WriteFileAtomic(configPath, updatedConfig); err != nil {
 			return fmt.Errorf("failed to write config output: %w", err)
 		}
+		if err := os.Chmod(configPath, 0o600); err != nil {
+			return fmt.Errorf("failed to set configuration permissions: %w", err)
+		}
+
+		version := ""
+		if Cfg != nil {
+			version = Cfg.Version
+		}
+		Cfg = config.New(version)
+		dbPath := Cfg.GetDBPath()
+		if err := materializeStore(dbPath, input); err != nil {
+			return err
+		}
 
 		pterm.Println()
 		pterm.Success.Println("Configuration Successful!")
 		pterm.Info.Printf("Saved locally to: %s\n", configPath)
+		pterm.Info.Printf("Database path: %s\n", dbPath)
 		if input != "" {
 			pterm.Success.Println("Your new database encryption key has been safely vaulted stringently offline.")
+		}
+		if _, manErr := os.Stat(filepath.Join(dbPath, "MANIFEST")); manErr == nil {
+			pterm.Success.Println("Datastore initialized.")
 		} else {
-			pterm.Info.Println("Database configured securely for unencrypted operations.")
+			pterm.Warning.Println("Datastore directory is ready; MANIFEST is not yet present.")
 		}
 		return nil
 	},
@@ -204,13 +229,14 @@ var configureCmd = &cobra.Command{
 func ensureInitialized(force bool) error {
 	configPath := configFilePath()
 	dirPath := configDirPath()
-
-	if _, err := os.Stat(configPath); err == nil && !force {
-		// Configuration already exists, no need to initialize
-		return nil
+	if dirPath == "" {
+		return fmt.Errorf("failed to resolve config directory")
 	}
 
-	if force {
+	_, statErr := os.Stat(configPath)
+	exists := statErr == nil
+
+	if exists && force {
 		fd := int(os.Stdin.Fd())
 		if term.IsTerminal(fd) {
 			confirm, confirmErr := pterm.DefaultInteractiveConfirm.Show("Configuration already exists. Overwrite? (resets to defaults)")
@@ -224,27 +250,84 @@ func ensureInitialized(force bool) error {
 		}
 	}
 
-	if dirPath == "" {
-		return fmt.Errorf("failed to resolve config directory")
-	}
-	if err := os.MkdirAll(dirPath, 0700); err != nil {
+	if err := os.MkdirAll(dirPath, 0o700); err != nil {
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
 
 	dbDir, dbErr := config.DefaultDBPath()
 	if dbErr != nil {
-		pterm.Warning.Printf("failed to resolve db directory: %v\n", dbErr)
-	} else if mkErr := os.MkdirAll(dbDir, 0700); mkErr != nil {
-		pterm.Warning.Printf("failed to create db directory %s: %v\n", dbDir, mkErr)
+		return fmt.Errorf("failed to resolve database directory: %w", dbErr)
+	}
+	if err := os.MkdirAll(dbDir, 0o700); err != nil {
+		return fmt.Errorf("failed to create database directory: %w", err)
+	}
+
+	if exists && !force {
+		return nil
 	}
 
 	fullConfig := fmt.Sprintf(FullConfigTemplate, "")
-	if err := os.WriteFile(configPath, []byte(fullConfig), 0600); err != nil {
+	if err := util.WriteFileAtomic(configPath, []byte(fullConfig)); err != nil {
 		return fmt.Errorf("failed to write configuration: %w", err)
+	}
+	if err := os.Chmod(configPath, 0o600); err != nil {
+		return fmt.Errorf("failed to set configuration permissions: %w", err)
 	}
 
 	pterm.Success.Printf("Configuration initialized at: %s\n", configPath)
 	return nil
+}
+
+func encryptionKeyFromEnv() (string, string) {
+	for _, name := range []string{"RECALL_ENCRYPTION_KEY", "MCP_RECALL_ENCRYPTION_KEY", "MCP_RECALL_ENCRYPTIONKEY"} {
+		if v := os.Getenv(name); v != "" {
+			return v, name
+		}
+	}
+	return "", ""
+}
+
+func materializeStore(dbPath, key string) error {
+	if dbPath == "" || config.UnsafeDatabasePath(dbPath) {
+		return fmt.Errorf("invalid database path %q", dbPath)
+	}
+	if err := os.MkdirAll(dbPath, 0o700); err != nil {
+		return fmt.Errorf("failed to create database directory: %w", err)
+	}
+	if _, err := os.Stat(filepath.Join(dbPath, "MANIFEST")); err == nil {
+		return nil
+	}
+
+	searchLimit := 0
+	batch := config.BatchConfig{}
+	if Cfg != nil {
+		searchLimit = Cfg.SearchLimit()
+		batch = Cfg.BatchSettings()
+	}
+	store, err := memory.NewMemoryStore(context.Background(), dbPath, key, searchLimit, batch)
+	if err != nil {
+		if isStoreLockError(err) {
+			pterm.Warning.Println("A running server holds the datastore; skipping initialization.")
+			return nil
+		}
+		return fmt.Errorf("initialize datastore: %w", err)
+	}
+	if err := store.Close(); err != nil {
+		return fmt.Errorf("close datastore: %w", err)
+	}
+	return nil
+}
+
+func isStoreLockError(err error) bool {
+	if err == nil {
+		return false
+	}
+	errStr := strings.ToLower(err.Error())
+	return strings.Contains(errStr, "cannot acquire directory lock") ||
+		strings.Contains(errStr, "another process is using this file") ||
+		strings.Contains(errStr, "resource temporarily unavailable") ||
+		strings.Contains(errStr, "lock acquire") ||
+		strings.Contains(errStr, "acquire lock")
 }
 
 func init() {
