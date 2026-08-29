@@ -64,29 +64,69 @@ See [Go Toolchain Resolution](#go-toolchain-resolution) for the full resolution 
 
 ## Quick Start
 
-### Step 1: Place the Binary
+### Step 1: Install the binary
 
-#### Linux
+No Go toolchain, no clone, and no `sudo`. The script downloads the unversioned
+release alias for this machine, verifies SHA-256 against `SHA256SUMS`, and
+installs under your home directory.
+
+#### Linux and macOS
+
+```bash
+curl -fsSL https://github.com/maccavelli/mcp-server-recall/releases/latest/download/install.sh | sh
+```
+
+Piped flags cannot follow `| sh`. Use environment variables:
+
+```bash
+URL=https://github.com/maccavelli/mcp-server-recall/releases/latest/download/install.sh
+
+# pin a release
+curl -fsSL "$URL" | MCP_RECALL_VERSION=1.0.3 sh
+
+# install somewhere other than ~/.local/bin
+curl -fsSL "$URL" | MCP_RECALL_INSTALL_DIR=$HOME/bin sh
+```
+
+To read the script first:
+
+```bash
+curl -fsSLO https://github.com/maccavelli/mcp-server-recall/releases/latest/download/install.sh
+less install.sh
+sh install.sh --dry-run
+```
+
+#### Windows (PowerShell)
+
+```powershell
+irm https://github.com/maccavelli/mcp-server-recall/releases/latest/download/install.ps1 | iex
+```
+
+Default location: `%LOCALAPPDATA%\Programs\mcp-server-recall`.
+
+#### Manual copy
+
+##### Linux
 
 ```bash
 mv mcp-server-recall ~/.local/bin/mcp-server-recall
 chmod +x ~/.local/bin/mcp-server-recall
 ```
 
-#### macOS
+##### macOS
 
 ```bash
 mv mcp-server-recall /usr/local/bin/mcp-server-recall
 chmod +x /usr/local/bin/mcp-server-recall
 ```
 
-#### Windows (PowerShell)
+##### Windows (PowerShell)
 
 ```powershell
-New-Item -ItemType Directory -Force -Path "$env:LOCALAPPDATA\Programs\recall"
-Move-Item mcp-server-recall.exe "$env:LOCALAPPDATA\Programs\recall\mcp-server-recall.exe"
+New-Item -ItemType Directory -Force -Path "$env:LOCALAPPDATA\Programs\mcp-server-recall"
+Move-Item mcp-server-recall.exe "$env:LOCALAPPDATA\Programs\mcp-server-recall\mcp-server-recall.exe"
 $currentPath = [Environment]::GetEnvironmentVariable("Path", "User")
-[Environment]::SetEnvironmentVariable("Path", "$currentPath;$env:LOCALAPPDATA\Programs\recall", "User")
+[Environment]::SetEnvironmentVariable("Path", "$currentPath;$env:LOCALAPPDATA\Programs\mcp-server-recall", "User")
 ```
 
 ---
