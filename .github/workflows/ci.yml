@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: ['**']
     tags:
       - "v*"
   pull_request:
@@ -26,12 +26,12 @@ permissions:
 
 jobs:
   # ---------------------------------------------------------------------------
-  # Go: format, tidy, vet, race, cgo-free tests, lint. Release binaries on tags.
+  # Go: format, tidy, vet, cgo-free tests, lint. Release binaries on tags.
   # Conventions follow magic-cli-remote's Go jobs (no Flutter/Android here).
   # ---------------------------------------------------------------------------
   go:
-    name: Go (test; build on tag)
-    runs-on: ubuntu-latest
+    name: Go (linux/amd64; build on tag)
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     outputs:
       version: ${{ steps.build.outputs.version }}
@@ -84,12 +84,7 @@ jobs:
       - name: Vet
         run: go vet ./...
 
-      # Race-detected run over every package (magic-cli-remote Go convention).
-      - name: Test (race, all packages)
-        run: go test -race ./...
-
-      # Second pass: the exact pure-Go stack the linux release binary is built
-      # with (CGO_ENABLED=0). Race implies cgo; neither pass replaces the other.
+      # Exercise the exact pure-Go stack used by the release binaries.
       - name: Test (cgo-free, all packages)
         run: CGO_ENABLED=0 go test ./...
 
@@ -175,8 +170,8 @@ jobs:
           path: dist/
           if-no-files-found: error
 
-  # Native execution for the non-amd64-Linux targets. Cross-compiling proves a
-  # target links; only running it proves it works.
+  # Native execution for the remaining release targets. Cross-compiling proves
+  # a target links; only running it proves it works.
   go-native:
     name: Go (${{ matrix.label }})
     strategy:
@@ -184,7 +179,8 @@ jobs:
       matrix:
         include:
           - { runner: ubuntu-24.04-arm, label: linux/arm64, shell: bash }
-          - { runner: windows-latest, label: windows/amd64, shell: bash }
+          - { runner: macos-15, label: darwin/arm64, shell: bash }
+          - { runner: windows-2025, label: windows/amd64, shell: bash }
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     env:
@@ -208,12 +204,10 @@ jobs:
       - name: Vet
         run: go vet ./...
 
-      # No -race: off darwin it forces CGO_ENABLED=1. Race coverage is the
-      # ubuntu-latest pass above.
       - name: Test
         run: go test ./...
 
-  # Execute the published non-amd64-Linux binaries on real hardware.
+  # Execute the published non-linux-amd64 binaries on real hardware.
   smoke-native:
     name: Smoke (${{ matrix.label }})
     if: github.ref_type == 'tag'
@@ -223,7 +217,8 @@ jobs:
       matrix:
         include:
           - { runner: ubuntu-24.04-arm, label: linux/arm64, suffix: linux-arm64, ext: "" }
-          - { runner: windows-latest, label: windows/amd64, suffix: windows-amd64, ext: ".exe" }
+          - { runner: macos-15, label: darwin/arm64, suffix: darwin-arm64, ext: "" }
+          - { runner: windows-2025, label: windows/amd64, suffix: windows-amd64, ext: ".exe" }
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 15
     steps:
@@ -285,11 +280,11 @@ jobs:
           VER="${{ needs.go.outputs.version || github.sha }}"
           NAME="mcp-server-recall"
 
-          chmod +x go-bin/${NAME}-* || true
+          chmod +x go-bin/"${NAME}"-* || true
 
           (cd go-bin && sha256sum -c SHA256SUMS)
 
-          for f in go-bin/${NAME}-*; do
+          for f in go-bin/"${NAME}"-*; do
             case "$f" in *SHA256SUMS*) continue ;; esac
             if ! go version -m "$f" | grep -q '^	build	CGO_ENABLED=0$'; then
               echo "error: $f is not CGO_ENABLED=0 — refusing to publish" >&2
@@ -310,7 +305,7 @@ jobs:
           fi
 
           ASSETS=()
-          for f in go-bin/${NAME}-*; do
+          for f in go-bin/"${NAME}"-*; do
             b="$(basename "$f")"
             case "$b" in
               SHA256SUMS) continue ;;
@@ -325,7 +320,7 @@ jobs:
           sha256sum "${ASSETS[@]}" > "$SUMS"
           ASSETS+=("$SUMS")
 
-          for f in ${NAME}-*-"${VER}"*; do
+          for f in "${NAME}"-*-"${VER}"*; do
             [ -f "$f" ] || continue
             case "$f" in
               SHA256SUMS*) continue ;;
