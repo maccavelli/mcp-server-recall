@@ -1,22 +1,45 @@
 # Platform installation
 
-This guide distinguishes the source tree from the latest published release so
-every command reflects assets that actually exist today.
+This guide covers the v1.1.0 release installers, manual verified downloads, and
+current-source builds.
 
 ## Release versus source
 
-As of 2026-08-29:
+The v1.1.0 release publishes:
 
-- GitHub marks [v1.0.2](https://github.com/maccavelli/mcp-server-recall/releases/latest)
-  as the latest release.
-- That release publishes Linux amd64, macOS arm64, and Windows amd64 binaries,
-  plus `SHA256SUMS`.
-- `main` adds Linux arm64 builds and bootstrap installer scripts after v1.0.2.
-- The latest-release `install.sh` and `install.ps1` URLs therefore return 404
-  until another tag publishes the new assets.
+- Linux amd64 and arm64 binaries;
+- a macOS arm64 binary;
+- a Windows amd64 binary;
+- versioned and unversioned `SHA256SUMS` manifests;
+- POSIX and PowerShell bootstrap installers.
 
-For reproducible current-main behavior, build from source. For a prebuilt
-v1.0.2 binary, use the manual verified downloads below.
+Use the bootstrap installer for the shortest supported installation. Build from
+source when you need unreleased `main` behavior. Manual verified downloads are
+provided as a transparent fallback.
+
+## One-line installation
+
+### macOS or Linux
+
+```bash
+curl -fsSL https://github.com/maccavelli/mcp-server-recall/releases/latest/download/install.sh | sh
+```
+
+The POSIX installer defaults to `$HOME/.local/bin`, requires no `sudo`, verifies
+SHA-256, clears macOS quarantine when possible, and configures an encrypted
+datastore. Run a downloaded copy with `--help` for version pinning, a custom
+directory, dry-run, configuration opt-out, and uninstall options.
+
+### Windows PowerShell
+
+```powershell
+irm https://github.com/maccavelli/mcp-server-recall/releases/latest/download/install.ps1 | iex
+```
+
+The PowerShell installer defaults to
+`%LOCALAPPDATA%\Programs\mcp-server-recall`, verifies SHA-256, and configures an
+encrypted datastore without elevation. A downloaded copy supports `-Version`,
+`-InstallDir`, `-NoConfigure`, and `-WhatIf`.
 
 ## Requirements
 
@@ -34,18 +57,19 @@ Go 1.26.5 packages for all three operating systems are available from the
 ### Supported architectures
 
 - amd64: current release and source builds.
-- arm64: source/CI on `main`; not present in v1.0.2.
+- arm64: current release and source builds.
 
-### Install the v1.0.2 amd64 binary
+### Manual verified binary
 
 ```bash
+ARCH=amd64 # use arm64 on 64-bit ARM Linux
 mkdir -p "$HOME/.local/bin"
 curl -fL -o /tmp/mcp-server-recall \
-  https://github.com/maccavelli/mcp-server-recall/releases/latest/download/mcp-server-recall-linux-amd64
+  "https://github.com/maccavelli/mcp-server-recall/releases/latest/download/mcp-server-recall-linux-${ARCH}"
 curl -fL -o /tmp/SHA256SUMS \
   https://github.com/maccavelli/mcp-server-recall/releases/latest/download/SHA256SUMS
-grep ' mcp-server-recall-linux-amd64$' /tmp/SHA256SUMS \
-  | sed 's#mcp-server-recall-linux-amd64#/tmp/mcp-server-recall#' \
+grep " mcp-server-recall-linux-${ARCH}$" /tmp/SHA256SUMS \
+  | sed "s#mcp-server-recall-linux-${ARCH}#/tmp/mcp-server-recall#" \
   | sha256sum -c -
 install -m 0755 /tmp/mcp-server-recall "$HOME/.local/bin/mcp-server-recall"
 ```
@@ -87,7 +111,7 @@ The project publishes Apple-silicon (`darwin-arm64`) builds. It does not publish
 an Intel (`darwin-amd64`) binary, even though the Go toolchain itself supports
 Intel macOS.
 
-### Install the v1.0.2 Apple-silicon binary
+### Manual verified Apple-silicon binary
 
 ```bash
 mkdir -p "$HOME/.local/bin"
@@ -135,7 +159,7 @@ The project publishes Windows amd64. It does not publish Windows arm64; the
 PowerShell installer on `main` intentionally refuses to select an amd64 binary
 under emulation.
 
-### Install the v1.0.2 amd64 binary
+### Manual verified amd64 binary
 
 Run PowerShell 5.1 or later:
 
@@ -213,20 +237,3 @@ PATHEXT/PATH.
 Next, follow [Client integration](client-integration.md) for stdio MCP or
 [Getting started](getting-started.md#standalone-local-service) for the local
 administrative service.
-
-## Future bootstrap installers
-
-The repository contains [`scripts/install.sh`](../../scripts/install.sh) and
-[`scripts/install.ps1`](../../scripts/install.ps1). CI is configured to attach
-them to future tagged releases. When those assets are published:
-
-- Unix defaults to `$HOME/.local/bin`, verifies SHA-256, and runs
-  `configure --encrypt-db=true`.
-- Windows defaults to
-  `%LOCALAPPDATA%\Programs\mcp-server-recall`, verifies SHA-256, and runs the
-  same configuration mode.
-- Both support opting out of configuration; the Unix script also supports
-  uninstall and dry-run modes.
-
-Until the latest release page actually lists those files, do not present their
-`releases/latest/download` URLs as working installation commands.

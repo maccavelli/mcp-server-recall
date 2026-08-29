@@ -6,13 +6,34 @@ terminal observability. BadgerDB is the source of truth; Bleve provides BM25
 content search, and `sahilm/fuzzy` adds character-subsequence matching for
 record keys.
 
-> Documentation status: audited against `main` at commit `90c4bef` on
-> 2026-08-29. The complete Go test suite passed during the audit. The latest
-> published release is currently v1.0.2 and predates several changes on
-> `main`; see [Release versus source](docs/guides/platform-installation.md#release-versus-source).
+> Documentation status: audited against `main` on 2026-08-29 and updated for
+> v1.1.0. The complete Go test suite passed during the audit.
+
+## Install
+
+The v1.1.0 bootstrap installers detect the supported OS and architecture,
+verify the downloaded binary against `SHA256SUMS`, install without elevation,
+and run `configure --encrypt-db=true` by default.
+
+macOS or Linux:
+
+```bash
+curl -fsSL https://github.com/maccavelli/mcp-server-recall/releases/latest/download/install.sh | sh
+```
+
+Windows PowerShell:
+
+```powershell
+irm https://github.com/maccavelli/mcp-server-recall/releases/latest/download/install.ps1 | iex
+```
+
+See [Platform installation](docs/guides/platform-installation.md) for supported
+architectures, custom destinations, manual checksum verification, source
+builds, and OS-specific paths.
 
 ## Table of contents
 
+- [Install](#install)
 - [What it does](#what-it-does)
 - [I want to](#i-want-to)
 - [Quick start](#quick-start)
@@ -81,9 +102,9 @@ go build -o mcp-server-recall.exe ./cmd/mcp-server-recall
 an MCP client starts this process for you. Run `dash`, `harvest`, `export`,
 `import`, or `prune` from a second terminal while `serve` is running.
 
-The prebuilt v1.0.2 release can be installed manually. The release does not yet
-contain the bootstrap installer scripts advertised by the old README; use the
-verified platform instructions rather than the currently broken installer URLs.
+The bootstrap installer is the preferred release installation path. Manual
+verified downloads and current-source builds remain available in the platform
+guide.
 
 ## Runtime model
 
@@ -103,10 +124,10 @@ requires Go 1.26.5.
 
 ## Supported platforms
 
-| Platform | Current `main` build/CI | Latest v1.0.2 binary |
+| Platform | Current `main` build/CI | v1.1.0 binary |
 |---|---:|---:|
 | Linux amd64 | Yes | Yes |
-| Linux arm64 | Yes | No |
+| Linux arm64 | Yes | Yes |
 | macOS arm64 (Apple silicon) | Yes | Yes |
 | macOS amd64 (Intel) | Not published by the project | No |
 | Windows amd64 | Yes | Yes |
@@ -150,8 +171,7 @@ paths, checksums, PATH setup, and Go discovery are covered in the
   or rebind it to a non-loopback interface.
 - Several dashboard labels are static or heuristic rather than measured. The
   security tab is not an encryption attestation.
-- Latest-release installer URLs return 404 until a new tagged release publishes
-  the installer assets already present on `main`.
+- Prebuilt Intel macOS and Windows arm64 binaries are not published.
 
 ## Project verification
 

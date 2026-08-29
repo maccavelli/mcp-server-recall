@@ -65,7 +65,7 @@ remain misleading in source and are now called out explicitly.
 | Streamable HTTP | Implemented locally | `/mcp` and `/mcp/internal` bind to 127.0.0.1. Tool subsets are configurable; no authentication or Origin validation exists. |
 | CLI | Implemented | Cobra exposes configure/init, serve, dash, two harvest commands, export, import, prune, purge, version/help, and generated completion. |
 | Dashboard | Implemented with caveats | Eight pages combine UDP and persisted telemetry. Several labels/values are static, heuristic, stale, or incomplete. |
-| Installers | Implemented on `main`, not currently published | POSIX and PowerShell scripts verify SHA-256 and configure encryption. Latest v1.0.2 release URLs for the scripts return 404. |
+| Installers | Implemented and released in v1.1.0 | POSIX and PowerShell scripts verify SHA-256, install per-user, and configure encryption. |
 | Platform CI | Strong | CI runs formatting, tidy, vet, race/cgo-free tests, lint, installer tests, cross-builds, native Linux arm64/Windows amd64 jobs, and tag-release checks. |
 
 ## CLI findings
@@ -80,8 +80,8 @@ remain misleading in source and are now called out explicitly.
   `prune [days]` and attributed its default to YAML, but the CLI hard-codes 30.
 - Import is an upsert, not a database wipe. The registered tool prose and CLI
   long description overstate replacement semantics.
-- `configure --encrypt-db=true` on current `main` securely generates a 32-byte
-  key and materializes the store. Latest v1.0.2 predates the latest setup work.
+- `configure --encrypt-db=true` securely generates a 32-byte key and
+  materializes the store. This setup flow is included in v1.1.0.
 
 ## Configuration findings
 
@@ -199,9 +199,10 @@ The current CI builds:
 - macOS arm64;
 - Windows amd64.
 
-Latest v1.0.2 checksums list only Linux amd64, macOS arm64, and Windows amd64.
-It does not include the installer scripts or Linux arm64 asset added in later
-commits. The previous README's bootstrap commands therefore fail today.
+At the initial audit baseline, v1.0.2 checksums listed only Linux amd64, macOS
+arm64, and Windows amd64. It did not include the installer scripts or Linux
+arm64 asset added in later commits. The v1.1.0 release closes that publication
+gap and makes the documented bootstrap commands the primary install path.
 
 The platform guide now provides verified manual-release downloads and separate
 current-source build instructions. It avoids claiming Intel macOS, Windows
@@ -230,7 +231,7 @@ Remaining engineering/documentation debt:
 - make namespace operation support consistent or schema-driven;
 - make the dashboard's encryption/log/AST values measured or label them as
   static estimates in the UI;
-- reconcile the source fallback version (`4.3.4`) with release tags (`1.0.2`);
+- keep the source fallback version synchronized with future release tags;
 - fix harvest error text that recommends unused `RECALL_GO_BIN`;
 - decide whether `/mcp` should truly be read-only and whether logs belong there;
 - add explicit Origin/auth controls before any non-stdio deployment;
@@ -243,7 +244,8 @@ The rewrite removes or corrects these prior claims:
 
 - “hybrid BM25 + semantic/vector recall” → BM25 plus fuzzy key matching;
 - nine namespaces → eleven storage domains with an operation support matrix;
-- installer one-liners work today → current release asset gap is explicit;
+- installer availability → the v1.0.2 gap is recorded and v1.1.0 is the first
+  release using the bootstrap path;
 - VS Code `mcpServers` syntax → current official `servers` syntax;
 - YAML `apiport` controls HTTP → environment variable controls HTTP;
 - generated Badger/Bleve tuning is configurable → sections are currently inert;

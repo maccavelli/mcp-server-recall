@@ -7,11 +7,10 @@ a working administrative CLI, and the dashboard.
 
 Choose the path that matches what you need:
 
+- For the latest release, use the checksum-verifying one-line installer.
 - For the current `main` branch, build from source with Go 1.26.5.
-- For a prebuilt binary, manually install the latest release and verify its
-  checksum.
-- Do not use the release `install.sh` or `install.ps1` URLs yet: the latest
-  release is v1.0.2 and does not contain those assets.
+- For a manual prebuilt installation, download the latest release and verify
+  its checksum.
 
 The complete OS-specific commands are in
 [Platform installation](platform-installation.md).
