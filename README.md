@@ -1,7 +1,7 @@
 # mcp-server-recall
 
 `mcp-server-recall` is a local Model Context Protocol (MCP) server for durable
-agent memory, structured records, Go source harvesting, full-text search, and
+agent memory, structured records, file ingestion, full-text search, and
 terminal observability. BadgerDB is the source of truth; Bleve provides BM25
 content search, and `sahilm/fuzzy` adds character-subsequence matching for
 record keys.
@@ -46,12 +46,10 @@ builds, and OS-specific paths.
 ## What it does
 
 - Persists compressed records in eleven named BadgerDB domains.
-- Exposes 17 MCP tools over stdio, with configurable subsets on two
+- Exposes 16 MCP tools over stdio, with configurable subsets on two
   loopback-only Streamable HTTP endpoints.
 - Searches record content with Bleve BM25 and record keys with fuzzy
   subsequence matching.
-- Harvests exported symbols, signatures, documentation, examples, interface
-  relationships, and dependencies from Go packages.
 - Ingests Markdown, YAML, JSON, text, and XML files as searchable records.
 - Exports and imports JSONL backups, prunes old records, rebuilds the search
   index, and displays live and persisted telemetry in a terminal dashboard.
@@ -69,7 +67,7 @@ key matching. See the [repository assessment](docs/guides/repository-assessment.
 | Get a server running quickly | [Getting started](docs/guides/getting-started.md) |
 | Connect an MCP client or VS Code | [Client integration](docs/guides/client-integration.md) |
 | Configure paths, encryption, search, or tool exposure | [Configuration](docs/guides/configuration.md) |
-| Use `configure`, `serve`, `dash`, `harvest`, backups, or cleanup commands | [CLI reference](docs/guides/cli-reference.md) |
+| Use `configure`, `serve`, `dash`, backups, or cleanup commands | [CLI reference](docs/guides/cli-reference.md) |
 | Call the MCP tools or understand namespaces | [MCP tools and namespaces](docs/guides/mcp-tools.md) |
 | Read the dashboard and telemetry | [Dashboard and observability](docs/guides/dashboard-and-observability.md) |
 | Back up data or understand security boundaries | [Operations and security](docs/guides/operations-and-security.md) |
@@ -99,8 +97,8 @@ go build -o mcp-server-recall.exe ./cmd/mcp-server-recall
 ```
 
 `serve` uses the terminal for MCP stdio and remains in the foreground. Normally
-an MCP client starts this process for you. Run `dash`, `harvest`, `export`,
-`import`, or `prune` from a second terminal while `serve` is running.
+an MCP client starts this process for you. Run `dash`, `export`, `import`, or
+`prune` from a second terminal while `serve` is running.
 
 The bootstrap installer is the preferred release installation path. Manual
 verified downloads and current-source builds remain available in the platform
@@ -118,9 +116,9 @@ guide.
 | Telemetry | UDP loopback updates every 500 ms and `telemetry.ring` snapshots every 10 seconds |
 | Process model | One `serve` process per host, enforced with a temporary-directory lock |
 
-The binary runs without Go. The Go toolchain is required only to build from
-source and to use either `harvest` subcommand. Current source development
-requires Go 1.26.5.
+The binary runs without Go, and no subcommand requires a Go toolchain. Go is
+needed only to build from source; current source development requires Go
+1.26.5.
 
 ## Supported platforms
 
@@ -161,10 +159,8 @@ paths, checksums, PATH setup, and Go discovery are covered in the
 ## Current limitations
 
 - Search is lexical and fuzzy, not embedding-based semantic/vector search.
-- Go harvesting requires a resolvable Go executable and may download remote
-  modules into the Go module cache.
-- The generated YAML includes `apiport`, `badgerdb`, `bleveindex`, and several
-  harvest/ingest settings that the current runtime does not consume.
+- The generated YAML includes `apiport`, `badgerdb`, `bleveindex`, and an
+  ingest setting that the current runtime does not consume.
 - Badger data may be encrypted, but `recall.yaml` stores the key as plaintext,
   Bleve has no configured encryption layer, and JSONL exports are plaintext.
 - The loopback HTTP service has no authentication. Do not proxy, port-forward,

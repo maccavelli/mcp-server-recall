@@ -236,7 +236,7 @@ Suitable assumptions:
 - no untrusted local processes sharing that account;
 - loopback HTTP is not exposed;
 - config, exports, and cache directories are protected;
-- external Go modules and harvested inputs are treated as untrusted data.
+- ingested files and client-supplied records are treated as untrusted data.
 
 Do not treat the current design as multi-user isolation, a remotely exposed
 database, a secrets vault, or end-to-end encrypted search.

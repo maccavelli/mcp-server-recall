@@ -22,7 +22,6 @@ rejection, so use the exact field names below.
 | `search` | Yes | Yes | Yes |
 | `list` | Yes | Yes | Yes |
 | `get` | Yes | Yes | Yes |
-| `harvest` | Yes | No | Yes |
 | `delete` | Yes | No | Yes |
 | `update_in_recall` | Yes | No | No |
 
@@ -39,9 +38,9 @@ The record model defines eleven domains:
 | Namespace | Intended content |
 |---|---|
 | `memories` | Unstructured notes and conversation memory. |
-| `standards` | Harvested external/standard Go package symbols and structured standards. |
+| `standards` | Structured standards records. |
 | `sessions` | Agent execution state and outcomes. |
-| `projects` | Harvested local Go project symbols and project records. |
+| `projects` | Project records. |
 | `dialectic_history` | Structured dialogue/history state. |
 | `server_status` | Server state records. |
 | `modernizer_verdicts` | Modernization verdict state. |
@@ -249,16 +248,7 @@ names were incorrect.
 Each replacement is exact string matching. An invalid/empty namespace currently
 falls back to `standards`; always provide the intended namespace explicitly.
 
-## Harvest and ingest
-
-### `harvest`
-
-```json
-{"namespace": "projects", "target_path": "/absolute/path/to/go/project"}
-```
-
-Only `projects` and `standards` are accepted. This is a Go AST/type harvester
-and requires the Go toolchain.
+## Ingest
 
 ### `ingest_files`
 

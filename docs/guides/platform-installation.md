@@ -16,8 +16,7 @@ for Linux, macOS, and Windows.
 | Windows arm64 | Not published | Installer refuses emulation | Source build or intentional manual amd64 use |
 
 Release binaries are built with `CGO_ENABLED=0`; running a prebuilt binary does
-not require Go. Go is required to build from source and by both Go-harvesting
-commands.
+not require Go. Go is required only to build from source.
 
 ## Recommended one-line installation
 
@@ -132,7 +131,7 @@ Windows requires PowerShell 5.1 or later and uses `Invoke-WebRequest` plus
 `Get-FileHash`.
 
 Install the Go version declared by [`go.mod`](../../go.mod) when building from
-source or harvesting Go code. Current packages are available from the
+source. Current packages are available from the
 [official Go downloads page](https://go.dev/dl/).
 
 ## Linux walkthrough
@@ -185,9 +184,6 @@ mcp-server-recall configure --encrypt-db=true
 | Datastore and Bleve index | `${XDG_DATA_HOME:-$HOME/.local/share}/mcp-server-recall/.mcp_recall` |
 | Crash log | `${XDG_CACHE_HOME:-$HOME/.cache}/mcp-server-recall/crash.log` |
 
-If a desktop MCP client cannot find Go, run `command -v go` in a terminal and
-use that absolute result as `MCP_GO_BIN_PATH` in the client configuration.
-
 ## macOS walkthrough
 
 ### Supported hardware
@@ -232,11 +228,6 @@ mcp-server-recall configure --encrypt-db=true
 | Configuration | `$HOME/Library/Application Support/mcp-server-recall/recall.yaml` |
 | Datastore and Bleve index | `$HOME/Library/Application Support/mcp-server-recall/.mcp_recall` |
 | Crash log | `$HOME/Library/Caches/mcp-server-recall/crash.log` |
-
-The official Go package normally installs the executable at
-`/usr/local/go/bin/go`. GUI applications often receive a smaller PATH than a
-terminal; use that absolute path as `MCP_GO_BIN_PATH` when harvesting fails only
-from a GUI client.
 
 ## Windows walkthrough
 
@@ -314,10 +305,6 @@ Move-Item -Force $download (Join-Path $installDir 'mcp-server-recall.exe')
 | Configuration | `%APPDATA%\mcp-server-recall\recall.yaml` |
 | Datastore and Bleve index | `%LOCALAPPDATA%\mcp-server-recall\.mcp_recall` |
 | Crash log | `%LOCALAPPDATA%\mcp-server-recall\crash.log` |
-
-The official Go MSI normally places `go.exe` at
-`C:\Program Files\Go\bin\go.exe`. Use that absolute path as `MCP_GO_BIN_PATH`
-when a GUI client cannot inherit the system PATH.
 
 ## Build current source
 
@@ -410,5 +397,4 @@ Normally an MCP client launches `serve` over stdio. Continue with
 | Linux installer rejects the architecture | Only amd64 and arm64 are published; 32-bit ARM and other architectures are unsupported. |
 | macOS installer rejects `x86_64` | No Intel macOS release binary is published. Build from source with a compatible Go toolchain. |
 | Windows installer rejects ARM64 | No native Windows arm64 asset is published. The installer does not silently choose emulation. |
-| Installation succeeds but harvesting cannot find Go | Install Go and set `MCP_GO_BIN_PATH` to the absolute `go` or `go.exe` path in the MCP client environment. |
 | Port 47669 is already in use | Set the same `MCP_ENDPOINT_API_PORT` for `serve` and administrative CLI processes, or set `MCP_REC_URL` for the CLI. |

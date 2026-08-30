@@ -34,10 +34,7 @@ The format below follows the
     "recall": {
       "type": "stdio",
       "command": "/home/alex/.local/bin/mcp-server-recall",
-      "args": ["serve"],
-      "env": {
-        "MCP_GO_BIN_PATH": "/usr/local/go/bin/go"
-      }
+      "args": ["serve"]
     }
   }
 }
@@ -51,10 +48,7 @@ The format below follows the
     "recall": {
       "type": "stdio",
       "command": "/Users/alex/.local/bin/mcp-server-recall",
-      "args": ["serve"],
-      "env": {
-        "MCP_GO_BIN_PATH": "/usr/local/go/bin/go"
-      }
+      "args": ["serve"]
     }
   }
 }
@@ -70,18 +64,14 @@ JSON requires doubled backslashes:
     "recall": {
       "type": "stdio",
       "command": "C:\\Users\\alex\\AppData\\Local\\Programs\\mcp-server-recall\\mcp-server-recall.exe",
-      "args": ["serve"],
-      "env": {
-        "MCP_GO_BIN_PATH": "C:\\Program Files\\Go\\bin\\go.exe"
-      }
+      "args": ["serve"]
     }
   }
 }
 ```
 
-`MCP_GO_BIN_PATH` is optional if harvesting is not used or the client can
-already resolve `go`. After saving, run **MCP: List Servers** and use its output
-view to inspect startup failures.
+The server needs no Go toolchain and no `env` block for one. After saving, run
+**MCP: List Servers** and use its output view to inspect startup failures.
 
 ## Clients that use `mcpServers`
 
@@ -93,10 +83,7 @@ clients, keep the server entry itself the same:
   "mcpServers": {
     "recall": {
       "command": "/absolute/path/to/mcp-server-recall",
-      "args": ["serve"],
-      "env": {
-        "MCP_GO_BIN_PATH": "/absolute/path/to/go"
-      }
+      "args": ["serve"]
     }
   }
 }
@@ -119,7 +106,6 @@ Useful per-server values include:
 
 | Variable | When to set it |
 |---|---|
-| `MCP_GO_BIN_PATH` | The client cannot find `go` and harvesting is needed. |
 | `MCP_ENDPOINT_API_PORT` | Port 47669 conflicts with another local service. |
 | `MCP_RECALL_DBPATH` | This client should use a non-default datastore. |
 | `MCP_RECALL_ENCRYPTION_KEY` | You intentionally keep the key out of YAML and accept client-managed secret injection. |
@@ -155,7 +141,7 @@ implementation relies on loopback isolation and has neither control.
 
 ## Standalone CLI connectivity
 
-`harvest`, `export`, `import`, and `prune` connect to:
+`export`, `import`, and `prune` connect to:
 
 ```text
 ${MCP_REC_URL:-http://localhost:${MCP_ENDPOINT_API_PORT:-47669}/mcp}/internal

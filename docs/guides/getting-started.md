@@ -117,21 +117,32 @@ The command should report that it connected to
 
 ## 5. Try the core workflows
 
-### Harvest a local Go project
+### Store a structured record
 
-```bash
-mcp-server-recall harvest projects .
+Ask your MCP client to call `save_to_recall` with an explicit namespace:
+
+```json
+{"namespace": "standards", "key": "STD-LOGGING-001", "category": "Logging",
+ "state_data": "{\"rule\": \"all errors are wrapped with %w\"}"}
 ```
 
-This requires the Go toolchain at runtime. If the server is launched by a GUI
-with a restricted PATH, set `MCP_GO_BIN_PATH` in that client's server
-environment.
+Then list what the namespace holds:
 
-### Harvest a standard-library package
-
-```bash
-mcp-server-recall harvest standards encoding/json
+```json
+{"namespace": "standards"}
 ```
+
+`list` groups records by category and returns their keys.
+
+### Ingest a documentation directory
+
+```json
+{"path": "/absolute/path/to/docs", "namespace": "memories"}
+```
+
+`ingest_files` walks the directory and indexes `.md`, `.yaml`, `.yml`, `.json`,
+`.txt`, and `.xml`. Markdown is split by headings, YAML by document boundaries.
+Unchanged files are skipped on re-ingest via a content hash.
 
 ### Make a backup
 
@@ -154,7 +165,6 @@ tail; there is no separate Event Log tab in the current dashboard.
 |---|---|
 | `another instance is running` | A `serve` process already owns the singleton lock. Reuse or stop it. |
 | CLI waits and then says the server is not running | Start `serve`, and make sure CLI and server use the same `MCP_ENDPOINT_API_PORT` or `MCP_REC_URL`. |
-| `go toolchain not found` | Install Go or set `MCP_GO_BIN_PATH` to the absolute `go`/`go.exe` path. |
 | `Path sandboxing violation` | Put the import/export file under configured `exportdir` or the OS user-cache root. |
 | Store will not open after key change | Restore the exact prior encryption key or restore data from a plaintext JSONL export into a new store. |
 | Dashboard shows persisted data but disconnected | The 10-second ring-file snapshot is readable, but live UDP telemetry is unavailable. |

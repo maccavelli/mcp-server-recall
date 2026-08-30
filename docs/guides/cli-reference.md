@@ -5,18 +5,19 @@ written to stderr to protect stdout for the stdio JSON-RPC transport.
 
 ## Command overview
 
-| Command | Requires running `serve` | Requires Go | Destructive |
-|---|---:|---:|---:|
-| `configure` / `init` | No | No | Can overwrite config or make encrypted data unreadable |
-| `serve` | No | No | No |
-| `dash` | No, but live data does | No | No |
-| `harvest standards` | Yes | Yes | Writes/updates `standards` |
-| `harvest projects` | Yes | Yes | Writes/updates `projects` |
-| `export` | Yes | No | No; refuses to overwrite a file |
-| `import` | Yes | No | Upserts records with matching keys |
-| `prune` | Yes | No | Yes |
-| `purge` | No; stop it first | No | Yes, removes the whole datastore directory |
-| `completion` | No | No | No |
+| Command | Requires running `serve` | Destructive |
+|---|---:|---:|
+| `configure` / `init` | No | Can overwrite config or make encrypted data unreadable |
+| `serve` | No | No |
+| `dash` | No, but live data does | No |
+| `export` | Yes | No; refuses to overwrite a file |
+| `import` | Yes | Upserts records with matching keys |
+| `prune` | Yes | Yes |
+| `purge` | No; stop it first | Yes, removes the whole datastore directory |
+| `completion` | No | No |
+
+No subcommand requires a Go toolchain. The published binary is self-contained;
+Go is needed only to build from source.
 
 Running `mcp-server-recall` with no subcommand invokes `serve`.
 
@@ -94,59 +95,6 @@ Controls:
 - `q` or Ctrl+C: exit immediately.
 
 See [Dashboard and observability](dashboard-and-observability.md).
-
-## `harvest standards`
-
-```text
-mcp-server-recall harvest standards <package-path>
-```
-
-Examples:
-
-```bash
-mcp-server-recall harvest standards encoding/json
-mcp-server-recall harvest standards github.com/modelcontextprotocol/go-sdk/mcp
-```
-
-The command connects to `/mcp/internal` and calls the `harvest` tool. The server
-uses `go/packages`, `go doc -all`, AST inspection, and Go types. Remote package
-resolution may run `go mod init`, `go get ...@latest`, and `go list` in a
-temporary workspace and populate the user's Go module cache.
-
-## `harvest projects`
-
-```text
-mcp-server-recall harvest projects <local-directory>
-```
-
-Example:
-
-```bash
-mcp-server-recall harvest projects .
-```
-
-Relative paths beginning with `.`, `..`, or `/` are converted to absolute paths
-by the CLI. On Windows, pass an absolute path when in doubt:
-
-```powershell
-mcp-server-recall.exe harvest projects (Get-Location).Path
-```
-
-Despite the general “codebase” wording, this command performs Go AST/type
-harvesting. It is not a language-independent source indexer.
-
-## Go executable resolution
-
-The server resolves Go once per process in this order:
-
-1. `MCP_GO_BIN_PATH` exactly as provided.
-2. `$GOROOT/bin/go` or `go.exe` if it is executable.
-3. `~/sdk/go*/bin/go`, known SDK directories, `~/.local/go/bin/go`,
-   `~/go/bin/go`, and on Unix `/usr/local/go/bin/go` or `/usr/lib/go/bin/go`.
-4. PATH lookup.
-
-Some error strings still mention `RECALL_GO_BIN`, but the resolver does not read
-that variable. Use `MCP_GO_BIN_PATH`.
 
 ## `export`
 

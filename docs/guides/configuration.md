@@ -54,7 +54,6 @@ safetools_internal:
   - search
   - get
   - list
-  - harvest
   - delete
   - prune_records
   - forget
@@ -64,20 +63,8 @@ safetools_internal:
 
 batchsettings:
   max_batch_size: 100
-  harvest_chunk_size: 50
-  harvest_inter_batch_sleep_ms: 500
   ingest_inter_batch_sleep_ms: 50
   load_fast_writes_enabled: 0
-
-harvest:
-  disable_drift: false
-  exclude_dirs:
-    - /vendor/
-    - /testdata/
-    - /mocks
-    - /internal/logs
-    - /tests
-    - /cmd/
 ```
 
 Do not reuse the example encryption key. Generate one with
@@ -98,13 +85,9 @@ Do not reuse the example encryption key. Generate one with
 | `authorizednamespaces` | built-in list | Allows structured dynamic domains and contributes values to generated MCP schemas. |
 | `namespaceschemas` | none | Defines required key names for `save_to_recall` state payloads. Current validation checks for substrings in `state_data`; it does not parse JSON structurally. |
 | `safetools` | four tools | Tool subset on `/mcp`; `get_internal_logs` is registered independently. |
-| `safetools_internal` | 14 tools | Tool subset on `/mcp/internal`; `get_internal_logs` is registered independently. |
+| `safetools_internal` | 13 tools | Tool subset on `/mcp/internal`; `get_internal_logs` is registered independently. |
 | `batchsettings.max_batch_size` | `100` | Maximum `SaveBatch`/batch-get size captured when the store opens. |
-| `batchsettings.harvest_chunk_size` | `50` | Records per harvested write chunk. |
-| `batchsettings.harvest_inter_batch_sleep_ms` | `500` | Delay between harvest write chunks. |
-| `batchsettings.load_fast_writes_enabled` | `0` | `1` doubles harvest chunks and removes the harvest sleep. |
-| `harvest.disable_drift` | `false` | Bypasses harvest checksum drift detection when true. |
-| `harvest.exclude_dirs` | built-in patterns | Substrings skipped by the Go package harvester. |
+| `batchsettings.load_fast_writes_enabled` | `0` | `1` doubles batch chunks and removes the inter-batch sleep. |
 
 `name` may be present, but the loader always forces it to
 `mcp-server-recall`.
@@ -120,9 +103,6 @@ that have no runtime accessor or are not applied to the relevant subsystem:
 | `description` | Parsed by Viper but not represented in runtime state. |
 | `badgerdb` | Ignored. Badger tuning is hard-coded in `buildBadgerOptions`. |
 | `bleveindex` | Ignored. Bleve tuning is hard-coded in `InitStorage`/`Rebuild`. |
-| `harvest.categories` | Ignored. |
-| `harvest.excludes` | Ignored. |
-| `harvest.extensions` | Ignored. |
 | `batchsettings.ingest_inter_batch_sleep_ms` | Loaded but file ingestion currently sleeps a hard-coded 50 ms. |
 
 Changing these values creates no documented runtime effect on current `main`.
@@ -141,16 +121,7 @@ default_pagination: 100
 
 batchsettings:
   max_batch_size: 100
-  harvest_chunk_size: 50
-  harvest_inter_batch_sleep_ms: 500
   load_fast_writes_enabled: 0
-
-harvest:
-  disable_drift: false
-  exclude_dirs:
-    - /vendor/
-    - /testdata/
-    - /generated/
 ```
 
 Create the custom roots before starting the service and restrict access:
@@ -236,7 +207,6 @@ The current enforcement only tests whether the strings `DocType` and
 | `MCP_RECALL_SEARCHENABLED` | Overrides `searchenabled`. |
 | `MCP_ENDPOINT_API_PORT` | Active HTTP port override. A positive integer is required; invalid values fall back to 47669. |
 | `MCP_REC_URL` | Base `/mcp` URL used by CLI clients before they append `/internal`. |
-| `MCP_GO_BIN_PATH` | Absolute Go executable used by harvesting. |
 | `MCP_TELEMETRY_UDP_PORTS` | Comma-separated ports/ranges for live dashboard telemetry. |
 | `MCP_RECALL_SHUTDOWN_TIMEOUT_SECS` | Positive integer timeout for store background workers; default 15 seconds. |
 | `GOMEMLIMIT` | Go memory limit; the binary sets `1024MiB` when absent. |

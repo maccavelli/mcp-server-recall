@@ -1,7 +1,16 @@
 # Repository assessment
 
 This assessment records the evidence used to rewrite the documentation. It
-describes the current `main` source tree, not an aspirational product design.
+describes the `main` source tree **as audited on 2026-08-29 at commit
+`90c4bef`**, not an aspirational product design.
+
+> **Partly superseded by
+> [0005-MADR](../0005-MADR-remove-harvest-and-go-toolchain-dependency.md).**
+> The harvest subsystem, both `harvest` CLI commands, the `harvest` MCP tool,
+> every `harvest.*` configuration key, and the entire dependency on an external
+> Go toolchain have since been removed. Findings below that concern harvesting
+> are retained as an accurate record of what was audited, annotated inline.
+> They no longer describe the current tree.
 
 ## Audit scope and baseline
 
@@ -59,19 +68,20 @@ remain misleading in source and are now called out explicitly.
 | Record compression | Implemented | `internal/memory/record.go` Zstd-compresses serialized records and migrates legacy formats. |
 | Search | Implemented, mislabeled | `internal/search` implements Bleve BM25 content search plus `sahilm/fuzzy` key matching. No embedding model or vector index exists. |
 | Namespace isolation | Implemented but uneven at tool layer | Eleven record domains exist. Universal save/get/search/list/delete switch statements support different subsets. |
-| Go harvesting | Implemented | `internal/harvest` uses Go AST, types, `go/packages`, `go doc`, remote module resolution, examples, interface checks, and checksums. It is Go-specific. |
+| Go harvesting | **Removed by 0005-MADR** | At audit time `internal/harvest` used Go AST, types, `go/packages`, `go doc`, remote module resolution, examples, interface checks, and checksums. The package no longer exists. |
 | File ingestion | Implemented with narrower formats than template | `ProcessPath` accepts Markdown, YAML, JSON, text, and XML; generated extension configuration is ignored. |
 | MCP stdio | Implemented | Primary server registers 17 tools and uses the official Go MCP SDK IO transport. |
 | Streamable HTTP | Implemented locally | `/mcp` and `/mcp/internal` bind to 127.0.0.1. Tool subsets are configurable; no authentication or Origin validation exists. |
-| CLI | Implemented | Cobra exposes configure/init, serve, dash, two harvest commands, export, import, prune, purge, version/help, and generated completion. |
+| CLI | Implemented | Cobra exposes configure/init, serve, dash, export, import, prune, purge, version/help, and generated completion. ~~two harvest commands~~ removed by 0005-MADR. |
 | Dashboard | Implemented with caveats | Eight pages combine UDP and persisted telemetry. Several labels/values are static, heuristic, stale, or incomplete. |
 | Installers | Implemented and released in v1.1.0 | POSIX and PowerShell scripts verify SHA-256, install per-user, and configure encryption. |
 | Platform CI | Strong | CI runs formatting, tidy, vet, race/cgo-free tests, lint, installer tests, cross-builds, native Linux arm64/Windows amd64 jobs, and tag-release checks. |
 
 ## CLI findings
 
-- `export`, `import`, `harvest`, and `prune` are HTTP clients, not offline
-  datastore commands. They require a running `serve` instance.
+- `export`, `import`, and `prune` are HTTP clients, not offline datastore
+  commands. They require a running `serve` instance. (`harvest` was also one;
+  removed by 0005-MADR.)
 - Each connects to `ResolveRecallURL() + "/internal"`, waiting up to ten seconds.
 - `purge` is the exception: it edits the datastore directory directly and
   should be used only after stopping `serve`.
@@ -89,14 +99,16 @@ The generated template is not a faithful runtime schema.
 
 Implemented and used fields include paths, encryption, search enable/limit,
 Jaccard dedup threshold, retention/pagination, authorized namespaces, simple
-schema rules, safe tool lists, active harvest chunk tuning, and exclude dirs.
+schema rules, safe tool lists, and — at audit time — harvest chunk tuning and
+exclude dirs, both removed by 0005-MADR.
 
 Generated but currently unused fields include:
 
 - `apiport` (the live setting is `MCP_ENDPOINT_API_PORT`);
 - the entire `badgerdb` section;
 - the entire `bleveindex` section;
-- `harvest.categories`, `harvest.excludes`, and `harvest.extensions`;
+- `harvest.categories`, `harvest.excludes`, and `harvest.extensions` (the whole
+  `harvest:` block has since been removed by 0005-MADR);
 - `description`;
 - the loaded `ingest_inter_batch_sleep_ms` value.
 
@@ -232,7 +244,8 @@ Remaining engineering/documentation debt:
 - make the dashboard's encryption/log/AST values measured or label them as
   static estimates in the UI;
 - keep the source fallback version synchronized with future release tags;
-- fix harvest error text that recommends unused `RECALL_GO_BIN`;
+- ~~fix harvest error text that recommends unused `RECALL_GO_BIN`~~ — resolved
+  by 0005-MADR: the code carrying that text was deleted;
 - decide whether `/mcp` should truly be read-only and whether logs belong there;
 - add explicit Origin/auth controls before any non-stdio deployment;
 - add a root license file if public reuse is intended—the audited repository
