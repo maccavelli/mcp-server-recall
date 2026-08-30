@@ -535,7 +535,7 @@ func (s *MemoryStore) SyncSearchIndex(ctx context.Context) error {
 		defer it.Close()
 		for it.Rewind(); it.Valid(); it.Next() {
 			k := string(it.Item().Key())
-			if strings.HasPrefix(k, "_idx:") {
+			if isIndexKey(it.Item().Key()) {
 				continue
 			}
 			if err := it.Item().Value(func(v []byte) error {
@@ -582,63 +582,6 @@ func (s *MemoryStore) SyncSearchIndex(ctx context.Context) error {
 		return fmt.Errorf("failed to read records for search rebuild: %w", err)
 	}
 
-	// Fix #15: Domain index backfill for legacy records.
-	// Records written before domain indices were introduced lack _idx:domain: entries.
-	// Without this backfill, accelerated prefix scans (Fixes #6-8) would miss legacy records.
-	var backfillKeys []struct {
-		domIdx string
-		key    string
-	}
-	if bfErr := s.db.View(func(txn *badger.Txn) error {
-		opts := badger.DefaultIteratorOptions
-		it := txn.NewIterator(opts)
-		defer it.Close()
-		for it.Rewind(); it.Valid(); it.Next() {
-			k := string(it.Item().Key())
-			if strings.HasPrefix(k, "_idx:") {
-				continue
-			}
-			if vErr := it.Item().Value(func(v []byte) error {
-				rec, mErr := migrateRecord(v)
-				if mErr == nil && rec != nil && rec.Domain != "" {
-					domIdx := fmt.Sprintf("_idx:domain:%s:%s", rec.Domain, k)
-					// Check if index entry already exists
-					if _, gErr := txn.Get([]byte(domIdx)); errors.Is(gErr, badger.ErrKeyNotFound) {
-						backfillKeys = append(backfillKeys, struct {
-							domIdx string
-							key    string
-						}{domIdx: domIdx, key: k})
-					}
-				}
-				return nil
-			}); vErr != nil {
-				continue
-			}
-		}
-		return nil
-	}); bfErr != nil {
-		slog.Warn("Domain index backfill scan failed (non-fatal)", "error", bfErr)
-	}
-
-	if len(backfillKeys) > 0 {
-		const backfillChunkSize = 100
-		for i := 0; i < len(backfillKeys); i += backfillChunkSize {
-			end := min(i+backfillChunkSize, len(backfillKeys))
-			chunk := backfillKeys[i:end]
-			if wErr := s.UpdateWithRetry(func(txn *badger.Txn) error {
-				for _, entry := range chunk {
-					if err := txn.Set([]byte(entry.domIdx), []byte(entry.key)); err != nil {
-						return err
-					}
-				}
-				return nil
-			}); wErr != nil {
-				slog.Error("Domain index backfill chunk failed", "chunkStart", i, "error", wErr)
-				break
-			}
-		}
-		slog.Info("Domain index backfill complete", "backfilled", len(backfillKeys))
-	}
 	if err := searchEngine.Rebuild(ctx, docs); err != nil {
 		return fmt.Errorf("search engine rebuild failed: %w", err)
 	}
@@ -739,7 +682,7 @@ func (s *MemoryStore) performAudit() {
 		count := 0
 		for it.Rewind(); it.Valid(); it.Next() {
 			keyStr := string(it.Item().Key())
-			if strings.HasPrefix(keyStr, "_idx:") {
+			if isIndexKey([]byte(keyStr)) {
 				continue
 			}
 			count++
@@ -883,6 +826,12 @@ func (s *MemoryStore) Save(ctx context.Context, title, key, content, category st
 
 	if domain == "" {
 		domain = DomainMemories
+	}
+
+	// Reject anything that cannot be encoded into an index key, before any write
+	// occurs, so a rejected record leaves no partial index behind (0006-MADR).
+	if err := ValidateIndexable(domain, key, category, tags); err != nil {
+		return nil, err
 	}
 
 	s.mu.Lock()
@@ -2587,65 +2536,55 @@ func (s *MemoryStore) deleteNoLock(key string) error {
 }
 
 func (s *MemoryStore) deleteRecordIndices(txn *badger.Txn, key string, rec *Record) {
-	// 1. Time Index
-	timeIdx := fmt.Sprintf("_idx:t:%x:%s", rec.UpdatedAt.UnixNano(), key)
-	if err := txn.Delete([]byte(timeIdx)); err != nil && !errors.Is(err, badger.ErrKeyNotFound) {
-		slog.Warn("Failed to delete time index", "key", key, "error", err)
-	}
-
-	// 2. Tag Indices
-	for _, t := range rec.Tags {
-		tagIdx := fmt.Sprintf("_idx:tag:%s:%s", strings.ToLower(t), key)
-		if err := txn.Delete([]byte(tagIdx)); err != nil && !errors.Is(err, badger.ErrKeyNotFound) {
-			slog.Warn("Failed to delete tag index", "tag", t, "key", key, "error", err)
+	// Mirrors createRecordIndices exactly; see the schema note there.
+	del := func(kind byte, value, label string) {
+		idxKey, err := encodeIndexKey(rec.Domain, kind, value, key)
+		if err != nil {
+			slog.Warn("Failed to encode index key for deletion", "index", label, "key", key, "error", err)
+			return
+		}
+		if err := txn.Delete(idxKey); err != nil && !errors.Is(err, badger.ErrKeyNotFound) {
+			slog.Warn("Failed to delete index entry", "index", label, "key", key, "error", err)
 		}
 	}
 
-	// 3. Category Index
+	del(kindTime, encodeTimeValue(rec.UpdatedAt), "time")
+
 	if rec.Category != "" {
-		catIdx := fmt.Sprintf("_idx:cat:%s:%s", strings.ToLower(rec.Category), key)
-		if err := txn.Delete([]byte(catIdx)); err != nil && !errors.Is(err, badger.ErrKeyNotFound) {
-			slog.Warn("Failed to delete category index", "cat", rec.Category, "key", key, "error", err)
-		}
+		del(kindCategory, strings.ToLower(rec.Category), "category")
 	}
 
-	// 4. Domain Index
-	if rec.Domain != "" {
-		domIdx := fmt.Sprintf("_idx:domain:%s:%s", rec.Domain, key)
-		if err := txn.Delete([]byte(domIdx)); err != nil && !errors.Is(err, badger.ErrKeyNotFound) {
-			slog.Warn("Failed to delete domain index", "domain", rec.Domain, "key", key, "error", err)
-		}
+	for _, t := range rec.Tags {
+		del(kindTag, strings.ToLower(t), "tag")
 	}
 }
 
 func (s *MemoryStore) createRecordIndices(txn *badger.Txn, key string, rec *Record) error {
-	// 1. Time Index
-	timeIdx := fmt.Sprintf("_idx:t:%x:%s", rec.UpdatedAt.UnixNano(), key)
-	if err := txn.Set([]byte(timeIdx), []byte(key)); err != nil {
+	// Schema: 0006-MADR. Every entry is domain-first with an empty value; the
+	// record key is the final key component. There is no separate domain index:
+	// every record has exactly one time entry, so the time prefix is the domain
+	// membership index.
+	set := func(kind byte, value string) error {
+		idxKey, err := encodeIndexKey(rec.Domain, kind, value, key)
+		if err != nil {
+			return err
+		}
+		return txn.Set(idxKey, nil)
+	}
+
+	if err := set(kindTime, encodeTimeValue(rec.UpdatedAt)); err != nil {
 		return fmt.Errorf("failed to set time index: %w", err)
 	}
 
-	// 2. Category Index
 	if rec.Category != "" {
-		catIdx := fmt.Sprintf("_idx:cat:%s:%s", strings.ToLower(rec.Category), key)
-		if err := txn.Set([]byte(catIdx), []byte(key)); err != nil {
+		if err := set(kindCategory, strings.ToLower(rec.Category)); err != nil {
 			return fmt.Errorf("failed to set category index: %w", err)
 		}
 	}
 
-	// 3. Tag Indices
 	for _, t := range rec.Tags {
-		tagIdx := fmt.Sprintf("_idx:tag:%s:%s", strings.ToLower(t), key)
-		if err := txn.Set([]byte(tagIdx), []byte(key)); err != nil {
+		if err := set(kindTag, strings.ToLower(t)); err != nil {
 			return fmt.Errorf("failed to set tag index for %s: %w", t, err)
-		}
-	}
-
-	// 4. Domain Index
-	if rec.Domain != "" {
-		domIdx := fmt.Sprintf("_idx:domain:%s:%s", rec.Domain, key)
-		if err := txn.Set([]byte(domIdx), []byte(key)); err != nil {
-			return fmt.Errorf("failed to set domain index: %w", err)
 		}
 	}
 
@@ -2682,6 +2621,19 @@ func (s *MemoryStore) SaveBatch(ctx context.Context, entries []BatchEntry) (stor
 	}
 	if len(entries) > s.maxBatchSize {
 		return 0, nil, fmt.Errorf("batch size %d exceeds maximum of %d", len(entries), s.maxBatchSize)
+	}
+
+	// Validate the whole batch before writing any of it (0006-MADR). Rejecting
+	// mid-batch would leave earlier entries indexed and later ones not.
+	for i := range entries {
+		e := &entries[i]
+		domain := e.Domain
+		if domain == "" {
+			domain = DomainMemories
+		}
+		if vErr := ValidateIndexable(domain, e.Key, e.Category, e.Tags); vErr != nil {
+			return 0, nil, fmt.Errorf("entry %q: %w", e.Key, vErr)
+		}
 	}
 
 	s.mu.Lock()
@@ -3379,7 +3331,7 @@ func (s *MemoryStore) ExportJSONL(ctx context.Context, safePath string, filterCa
 			k := string(item.Key())
 
 			// Skip internal index keys
-			if strings.HasPrefix(k, "_idx:") {
+			if isIndexKey(it.Item().Key()) {
 				continue
 			}
 
@@ -3918,7 +3870,7 @@ func (s *MemoryStore) PruneDomain(ctx context.Context, targetDomain string, days
 			defer it.Close()
 			for it.Rewind(); it.Valid(); it.Next() {
 				key := string(it.Item().Key())
-				if strings.HasPrefix(key, "_idx:") {
+				if isIndexKey([]byte(key)) {
 					continue
 				}
 				if rec, err := getRecordForDeletion(txn, key); err == nil && rec != nil {
