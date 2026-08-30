@@ -2959,8 +2959,14 @@ func (s *MemoryStore) UpdateWithRetry(fn func(txn *badger.Txn) error) error {
 	return fmt.Errorf("transaction conflict after %d retries: %w", maxRetries, err)
 }
 
-// ListCategories retrieves a unique list of all categories with counts.
-func (s *MemoryStore) ListCategories(ctx context.Context) (map[string]int, error) {
+// ListCategories retrieves a unique list of categories with counts.
+//
+// A non-empty domain restricts the result to that domain, which is what
+// memory-scoped callers need: the `list` tool renders this under the heading
+// "Memory Categories", so returning categories owned by sessions, standards or
+// any other namespace would misreport them as memory categories. Pass "" for a
+// whole-datastore distribution, as the telemetry dashboard does.
+func (s *MemoryStore) ListCategories(ctx context.Context, domain string) (map[string]int, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -2978,11 +2984,18 @@ func (s *MemoryStore) ListCategories(ctx context.Context) (map[string]int, error
 			parts := strings.Split(key, ":")
 			if len(parts) >= 3 {
 				cat := parts[2]
-				categories[cat]++
-				it.Next()
-			} else {
-				it.Next()
+				if domain == "" {
+					categories[cat]++
+				} else if err := item.Value(func(kVal []byte) error {
+					if rec, gErr := loadRecordFromTxn(txn, kVal); gErr == nil && rec.Domain == domain {
+						categories[cat]++
+					}
+					return nil
+				}); err != nil {
+					slog.Warn("Error reading category index during listing", "category", cat, "error", err)
+				}
 			}
+			it.Next()
 		}
 		return nil
 	})

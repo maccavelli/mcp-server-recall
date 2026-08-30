@@ -16,7 +16,10 @@ func TestHandleListCategories(t *testing.T) {
 	defer cleanup()
 	ctx := context.Background()
 
-	// Add some data to the store so we have a category
+	// One category per domain. The result is rendered as "Memory Categories",
+	// so only the memories-domain category may appear: a sessions record's
+	// category showing up here would misreport it as a memory category.
+	_, _ = srv.store.Save(ctx, "title", "memkey", "memstate", "journal", []string{}, memory.DomainMemories, 0.9)
 	_, _ = srv.store.Save(ctx, "title", "testkey", "teststate", "project", []string{}, memory.DomainSessions, 0.9)
 
 	req := buildReq(`{}`)
@@ -28,18 +31,19 @@ func TestHandleListCategories(t *testing.T) {
 		t.Fatalf("did not expect error in list categories result")
 	}
 
-	// Should contain "project" somewhere
-	found := false
+	var body string
 	if len(res.Content) > 0 {
 		if txt, ok := res.Content[0].(*mcp.TextContent); ok {
-			t.Logf("Found text content: %s", txt.Text)
-			if strings.Contains(txt.Text, "project") {
-				found = true
-			}
+			body = txt.Text
 		}
 	}
-	if !found {
-		t.Errorf("expected to find %s in categories list", "project")
+	t.Logf("categories payload: %s", body)
+
+	if !strings.Contains(body, "journal") {
+		t.Errorf("expected the memories-domain category %q in the listing, got: %s", "journal", body)
+	}
+	if strings.Contains(body, "project") {
+		t.Errorf("sessions-domain category %q leaked into Memory Categories: %s", "project", body)
 	}
 }
 

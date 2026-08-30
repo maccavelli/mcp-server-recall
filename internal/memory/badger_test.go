@@ -147,7 +147,7 @@ func TestMemoryStore(t *testing.T) {
 	})
 
 	t.Run("ListCategories", func(t *testing.T) {
-		cats, err := store.ListCategories(ctx)
+		cats, err := store.ListCategories(ctx, DomainMemories)
 		if err != nil {
 			t.Fatalf("ListCategories failed: %v", err)
 		}

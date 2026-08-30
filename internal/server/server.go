@@ -986,7 +986,8 @@ func (rs *MCPRecallServer) handleForget(ctx context.Context, req *mcp.CallToolRe
 }
 
 func (rs *MCPRecallServer) handleListCategories(ctx context.Context, req *mcp.CallToolRequest, _ ListCategoriesInput) (*mcp.CallToolResult, any, error) {
-	categories, err := rs.store.ListCategories(ctx)
+	// Scoped to memories: this result is rendered as "Memory Categories".
+	categories, err := rs.store.ListCategories(ctx, memory.DomainMemories)
 	if err != nil {
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("Error fetching categories: %v", err)}},

@@ -203,7 +203,8 @@ func WriteSnapshot(cfg *config.Config, store *memory.MemoryStore, logStream func
 	// Category distribution — cadence gate: run ListCategories() every 3rd cycle (30s).
 	categoryTick++
 	if categoryTick%3 == 0 {
-		if cats, err := store.ListCategories(context.Background()); err == nil {
+		// "" = whole datastore: the dashboard panel is a global distribution.
+		if cats, err := store.ListCategories(context.Background(), ""); err == nil {
 			lastCategories = topNCategories(cats, 10)
 		}
 	}
