@@ -140,11 +140,24 @@ One index family, one encoding:
 * `0x00` is the separator. It cannot appear in any component: the write boundary
   **rejects** a domain, category, tag or key containing a NUL byte, rather than
   escaping it. Rejection is verifiable; escaping is another parser to get wrong.
+  Every component is therefore NUL-free text, which is what makes a
+  separator-delimited key safe to split on read.
 * `<kind>` is one byte: `t` time, `c` category, `g` tag.
-* `<value>` is the indexed term — for `t`, an **8-byte big-endian `uint64`** of
-  `UnixNano`, which is fixed-width and therefore correctly ordered for all
-  representable instants, with reverse-chronological reads served by Badger's
-  reverse iteration rather than by encoding tricks.
+* `<value>` is the indexed term — for `t`, `UnixNano` as **16-character
+  zero-padded lowercase hex** (`%016x`), with reverse-chronological reads served
+  by Badger's reverse iteration rather than by encoding tricks.
+
+  > **Correction, 2026-08-30.** This originally specified an 8-byte big-endian
+  > `uint64`. That is **incompatible with a `0x00` separator** and was caught by
+  > prototyping the schema against Badger v4.9.1 before writing the plan: every
+  > realistic `UnixNano` contains NUL bytes in big-endian form —
+  > `1788066000000000000` encodes as `18 d0 7c 8d ac f4 20 00`, and
+  > `108000000000000` as `00 00 62 39 b5 a2 c0 00`. A separator-delimited key
+  > cannot carry raw binary that may contain the separator; the prototype lost
+  > one of four time entries and panicked on parse. Fixed-width hex keeps the
+  > component NUL-free while preserving the property that matters — lexicographic
+  > order equals numeric order, for the whole `uint64` range, by construction
+  > rather than by the current epoch.
 * The value is **empty**. Readers set `PrefetchValues = false` and recover the
   record key from the final key component.
 
@@ -205,6 +218,25 @@ release note stating plainly that existing stores must be recreated, and the
 `export_records` → upgrade → `import_records` path documented as the only
 supported way to carry data across it.
 
+### Schema validated by prototype
+
+The schema was prototyped directly against Badger v4.9.1 — the pinned version —
+outside the repository, before committing to it. Confirmed with NUL-separated
+keys and empty values:
+
+| Scan | Result |
+|---|---|
+| `domain=memories, tag=project:foo` | 1 hit — does not see the sessions record with the same tag |
+| `domain=sessions, tag=project:foo` | 1 hit |
+| `domain=memories, tag=team:platform` | 1 hit — the category/tag colon case that breaks today |
+| `domain=memories, all tags` | 2 hits |
+| `domain=memories, all kinds` (teardown) | 7 hits — one prefix covers every index kind |
+| `domain=memories, time`, reverse | 4 hits, correctly ordered |
+
+Ascending time scan returned `108000000000000`, `1152939600000000000`,
+`1788066000000000000`, `18446677200000000000` in that order — 1970 through 2554
+in correct numeric sequence.
+
 ### Confirmation
 
 1. **Round-trip property test.** Categories, tags and keys containing `:`, `%`,
@@ -216,7 +248,10 @@ supported way to carry data across it.
    rejected with a clear error at the write boundary, and no partial index is
    written.
 3. **Ordering.** `GetRecent` returns strict reverse-chronological order across a
-   set spanning 1970, 2006, 2026 and 2554, and across a zero `time.Time`.
+   set spanning 1970, 2006, 2026 and 2554, and across a zero `time.Time`. No
+   index key contains a `0x00` byte outside a separator position — assert this
+   directly over a full store scan, since it is the invariant the whole schema
+   rests on.
 4. **Zero discards.** Instrumented counts of records loaded and then discarded
    are zero for `searchByTag`, `GetRecent` and tag-filtered `ListSessions`.
 5. `internal/memory/domain_scoping_test.go` passes **unmodified**.
