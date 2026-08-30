@@ -56,7 +56,7 @@ const (
 	tabOverview = iota
 	tabMemoryGC
 	tabSearchEngine
-	tabTaxonomyAST
+	tabTaxonomy
 	tabRPCAnalytics
 	tabNetwork
 	tabSecurity
@@ -68,7 +68,7 @@ var navItems = []string{
 	"Summary",
 	"Memory Consolidation & GC",
 	"Semantic Search Engine",
-	"Taxonomy & AST Pipeline",
+	"Taxonomy & Categories",
 	"RPC & Gateway Analytics",
 	"Network Topology",
 	"Security & Cryptography",
@@ -321,8 +321,8 @@ func (m model) View() string {
 		content = renderMemoryGC(m)
 	case tabSearchEngine:
 		content = renderSearchEngine(m)
-	case tabTaxonomyAST:
-		content = renderTaxonomyAST(m)
+	case tabTaxonomy:
+		content = renderTaxonomy(m)
 	case tabRPCAnalytics:
 		content = renderRPCAnalytics(m)
 	case tabNetwork:

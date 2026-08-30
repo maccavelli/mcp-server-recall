@@ -48,11 +48,6 @@ func TestDashboardViews(t *testing.T) {
 			map[string]any{"category": "go-patterns", "count": 25},
 			map[string]any{"category": "security", "count": 10},
 		},
-		"ast": map[string]any{
-			"disable_drift": false,
-			"exclude_dirs":  0,
-			"parsed_files":  100,
-		},
 		"taxonomy": map[string]any{
 			"memories":  10,
 			"sessions":  5,
@@ -130,7 +125,7 @@ func TestDashboardViews(t *testing.T) {
 		t.Error("Expected 'BadgerDB Cache Hits' in RPC analytics tab")
 	}
 
-	m.activeTab = tabTaxonomyAST
+	m.activeTab = tabTaxonomy
 	taxView := m.View()
 	if !strings.Contains(taxView, "Category Distribution") {
 		t.Error("Expected 'Category Distribution' in taxonomy tab")

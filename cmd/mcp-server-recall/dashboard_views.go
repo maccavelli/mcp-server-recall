@@ -381,22 +381,9 @@ func renderSearchEngine(m model) string {
 	return b.String()
 }
 
-func renderTaxonomyAST(m model) string {
+func renderTaxonomy(m model) string {
 	b := strings.Builder{}
 	snapshot := m.coldMetrics.Snapshot
-
-	stAst := loadingText
-	if a, ok := snapshot["ast"].(map[string]any); ok {
-		stAst = renderStyledTable(
-			[]string{"AST Configuration", dashFieldValue},
-			[][]string{
-				{"Disable Drift Heuristics", fmt.Sprintf("%v", a["disable_drift"])},
-				{"Excluded Directories", fmt.Sprintf("%v boundaries", a["exclude_dirs"])},
-				{"Estimated AST Derivations", fmt.Sprintf("%v", a["parsed_files"])},
-			},
-		)
-	}
-	astBox := cardStyle.Render(subTitleStyle.Render("AST Ingestion Pipeline") + "\n" + stAst)
 
 	stTax := loadingText
 	if tx, ok := snapshot["taxonomy"].(map[string]any); ok {
@@ -425,7 +412,7 @@ func renderTaxonomyAST(m model) string {
 	}
 	taxBox := cardStyle.Render(subTitleStyle.Render("Taxonomy & Tag Distribution") + "\n" + stTax)
 
-	b.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, astBox, taxBox))
+	b.WriteString(taxBox)
 	b.WriteString("\n")
 
 	// Category Distribution (Top 10)

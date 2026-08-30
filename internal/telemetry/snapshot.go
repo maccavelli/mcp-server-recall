@@ -19,17 +19,20 @@ import (
 	"github.com/maccavelli/mcp-server-recall/internal/memory"
 )
 
+// StorageStats reports BadgerDB on-disk footprint, split by LSM tree and value log.
 type StorageStats struct {
 	LsmKB  float64 `json:"lsm_kb"`
 	VlogKB float64 `json:"vlog_kb"`
 }
 
+// BleveStats reports full-text index size, document count, and drift from the datastore.
 type BleveStats struct {
 	Documents uint64 `json:"documents"`
 	Drift     uint64 `json:"drift"`
 	IndexSize int64  `json:"index_size"`
 }
 
+// AnalyticsStats reports cache effectiveness, RPC latency, and per-primitive call counts.
 type AnalyticsStats struct {
 	CacheHits       uint64                          `json:"cache_hits"`
 	CacheMisses     uint64                          `json:"cache_misses"`
@@ -40,22 +43,26 @@ type AnalyticsStats struct {
 	Primitives      map[string]memory.PrimitiveStat `json:"primitives"`
 }
 
+// WriteOpsStats counts record writes by outcome: newly created, updated, or merged.
 type WriteOpsStats struct {
 	Created uint64 `json:"created"`
 	Updated uint64 `json:"updated"`
 	Merged  uint64 `json:"merged"`
 }
 
+// BatchHealthStats reports throughput and error totals for batched writes.
 type BatchHealthStats struct {
 	EntriesProcessed uint64 `json:"entries_processed"`
 	Errors           uint64 `json:"errors"`
 }
 
+// CategoryEntry is a single category and its record count in the distribution report.
 type CategoryEntry struct {
 	Category string `json:"category"`
 	Count    int    `json:"count"`
 }
 
+// MemoryGCStats reports retention sweeps, pruned nodes, and record counts by age horizon.
 type MemoryGCStats struct {
 	Sweeps      uint64 `json:"sweeps"`
 	PrunedNodes uint64 `json:"pruned_nodes"`
@@ -64,6 +71,7 @@ type MemoryGCStats struct {
 	Horizon30d  int    `json:"horizon_30d"`
 }
 
+// NetworkStats reports transport state: stdio attachment, HTTP port, and connected clients.
 type NetworkStats struct {
 	StdioConnected bool              `json:"stdio_connected"`
 	HTTPPort       int               `json:"http_port"`
@@ -71,16 +79,12 @@ type NetworkStats struct {
 	TotalClients   int               `json:"total_clients"`
 }
 
+// SecurityStats counts namespace boundary violations rejected by the store.
 type SecurityStats struct {
 	BoundaryViolations uint64 `json:"boundary_violations"`
 }
 
-type ASTStats struct {
-	DisableDrift bool `json:"disable_drift"`
-	ExcludeDirs  int  `json:"exclude_dirs"`
-	ParsedFiles  int  `json:"parsed_files"`
-}
-
+// ConfigStats reports the effective runtime configuration surfaced to the dashboard.
 type ConfigStats struct {
 	DBPath        string `json:"db_path"`
 	Version       string `json:"version"`
@@ -88,6 +92,7 @@ type ConfigStats struct {
 	EnvGomemlimit string `json:"env_gomemlimit"`
 }
 
+// RuntimeStats reports Go runtime health: allocation, goroutines, uptime, GC and CPU.
 type RuntimeStats struct {
 	MemoryMB   uint64  `json:"memory_mb"`
 	Goroutines int     `json:"goroutines"`
@@ -96,7 +101,9 @@ type RuntimeStats struct {
 	CPUUsage   float64 `json:"cpu_usage"`
 }
 
-type TelemetrySnapshot struct {
+// Snapshot is the complete telemetry document serialised to the ring buffer and
+// read by the dashboard.
+type Snapshot struct {
 	Storage     StorageStats       `json:"storage"`
 	Bleve       BleveStats         `json:"bleve"`
 	Taxonomy    map[string]int     `json:"taxonomy"`
@@ -107,14 +114,15 @@ type TelemetrySnapshot struct {
 	MemoryGC    MemoryGCStats      `json:"memory_gc"`
 	Network     NetworkStats       `json:"network"`
 	Security    SecurityStats      `json:"security"`
-	AST         ASTStats           `json:"ast"`
 	Config      ConfigStats        `json:"config"`
 	Runtime     RuntimeStats       `json:"runtime"`
 	TopQueries  []memory.QueryStat `json:"top_queries"`
 }
 
 var (
-	ringMu    sync.Mutex
+	ringMu sync.Mutex
+
+	// StartTime is the process start instant, used to derive reported uptime.
 	StartTime = time.Now()
 
 	// Category distribution cadence gate (protected by ringMu).
@@ -221,7 +229,7 @@ func WriteSnapshot(cfg *config.Config, store *memory.MemoryStore, logStream func
 	h24, h7d, h30d := store.GetTTLHorizon(context.Background(), cfg.DefaultPurgeDays())
 	primitives := store.GetPrimitiveMetrics(uptime)
 
-	snapshot := TelemetrySnapshot{
+	snapshot := Snapshot{
 		Storage: stats,
 		Bleve: BleveStats{
 			Documents: docs,
@@ -258,11 +266,6 @@ func WriteSnapshot(cfg *config.Config, store *memory.MemoryStore, logStream func
 		Network: netBlock,
 		Security: SecurityStats{
 			BoundaryViolations: boundViolations,
-		},
-		AST: ASTStats{
-			DisableDrift: cfg.HarvestDisableDrift(),
-			ExcludeDirs:  len(cfg.ExcludeDirs()),
-			ParsedFiles:  metrics.Namespaces[memory.DomainProjects] * 2, // Heuristic mapping
 		},
 		Config: ConfigStats{
 			DBPath:        cfg.GetDBPath(),
