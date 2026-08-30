@@ -1,6 +1,6 @@
 # Platform installation
 
-This guide covers the supported v1.1.0 release installers, manual verified
+This guide covers the supported v2.0.0 release installers, manual verified
 downloads, source builds, filesystem locations, upgrades, and troubleshooting
 for Linux, macOS, and Windows.
 
@@ -51,11 +51,11 @@ the destination is not already available to the current process or user.
 A command piped into `sh` cannot receive positional flags after the pipe. Use
 the installer environment variables instead.
 
-Pin v1.1.0:
+Pin v2.0.0:
 
 ```bash
 curl -fsSL https://github.com/maccavelli/mcp-server-recall/releases/latest/download/install.sh \
-  | MCP_RECALL_VERSION=1.1.0 sh
+  | MCP_RECALL_VERSION=2.0.0 sh
 ```
 
 Choose a different directory:
@@ -98,7 +98,7 @@ published script as a script block:
 ```powershell
 $url = 'https://github.com/maccavelli/mcp-server-recall/releases/latest/download/install.ps1'
 $installer = [scriptblock]::Create((Invoke-RestMethod $url))
-& $installer -Version 1.1.0 `
+& $installer -Version 2.0.0 `
   -InstallDir (Join-Path $env:LOCALAPPDATA 'Programs\mcp-server-recall') `
   -EncryptDb true
 ```
@@ -107,7 +107,7 @@ Useful parameters and environment values:
 
 | Setting | Effect |
 |---|---|
-| `-Version 1.1.0` | Download from the specified `vX.Y.Z` release instead of `latest`. |
+| `-Version 2.0.0` | Download from the specified `vX.Y.Z` release instead of `latest`. |
 | `-InstallDir PATH` | Override the per-user program directory. |
 | `-EncryptDb false` | Configure without datastore encryption. |
 | `-NoConfigure` | Install the binary without running `configure`. |
@@ -345,7 +345,7 @@ Pinning is performed by release version, without the leading `v`:
 
 ```bash
 curl -fsSL https://github.com/maccavelli/mcp-server-recall/releases/latest/download/install.sh \
-  | MCP_RECALL_VERSION=1.1.0 sh
+  | MCP_RECALL_VERSION=2.0.0 sh
 ```
 
 The Unix installer supports removal from its selected install directory:

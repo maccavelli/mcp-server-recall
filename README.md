@@ -7,11 +7,11 @@ content search, and `sahilm/fuzzy` adds character-subsequence matching for
 record keys.
 
 > Documentation status: audited against `main` on 2026-08-29 and updated for
-> v1.1.0. The complete Go test suite passed during the audit.
+> v2.0.0. The complete Go test suite passed during the audit.
 
 ## Install
 
-The v1.1.0 bootstrap installers detect the supported OS and architecture,
+The v2.0.0 bootstrap installers detect the supported OS and architecture,
 verify the downloaded binary against `SHA256SUMS`, install without elevation,
 and run `configure --encrypt-db=true` by default.
 
@@ -122,7 +122,7 @@ needed only to build from source; current source development requires Go
 
 ## Supported platforms
 
-| Platform | Current `main` build/CI | v1.1.0 binary |
+| Platform | Current `main` build/CI | v2.0.0 binary |
 |---|---:|---:|
 | Linux amd64 | Yes | Yes |
 | Linux arm64 | Yes | Yes |

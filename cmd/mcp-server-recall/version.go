@@ -4,7 +4,7 @@ package main
 import "strings"
 
 // RawVersion is the build-time version of the Recall MCP server.
-var RawVersion = "v1.1.0"
+var RawVersion = "v2.0.0"
 
 // Version is RawVersion without its optional v prefix.
 var Version = strings.TrimPrefix(RawVersion, "v")
