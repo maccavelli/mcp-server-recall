@@ -71,10 +71,10 @@ func TestHandlers_MoreCoverage(t *testing.T) {
 	store.SyncSearchIndex(ctx)
 
 	// handleListProjectCategories
-	_, _, _ = srv.handleListProjectCategories(ctx, req, ListProjectCategoriesInput{SymbolType: "func"})
+	_, _, _ = srv.handleListProjectCategories(ctx, req, ListProjectCategoriesInput{Category: "HarvestedCode"})
 
 	// handleListStandardsCategories
-	_, _, _ = srv.handleListStandardsCategories(ctx, req, ListStandardsCategoriesInput{SymbolType: "func"})
+	_, _, _ = srv.handleListStandardsCategories(ctx, req, ListStandardsCategoriesInput{Category: "HarvestedCode"})
 
 	// handleDeleteMemories
 	_, _, _ = srv.handleDeleteMemories(ctx, req, DeleteMemoriesInput{Key: "mem1"})
@@ -174,11 +174,11 @@ func TestHandlers_MoreCoverage(t *testing.T) {
 
 	// handleListProjectCategories extra
 	_, _, _ = srv.handleListProjectCategories(ctx, req, ListProjectCategoriesInput{})
-	_, _, _ = srv.handleListProjectCategories(ctx, req, ListProjectCategoriesInput{SymbolType: "func"})
+	_, _, _ = srv.handleListProjectCategories(ctx, req, ListProjectCategoriesInput{Category: "HarvestedCode"})
 
 	// handleListStandardsCategories extra
 	_, _, _ = srv.handleListStandardsCategories(ctx, req, ListStandardsCategoriesInput{})
-	_, _, _ = srv.handleListStandardsCategories(ctx, req, ListStandardsCategoriesInput{SymbolType: "func"})
+	_, _, _ = srv.handleListStandardsCategories(ctx, req, ListStandardsCategoriesInput{Category: "HarvestedCode"})
 
 	// handleDeleteMemories extra
 	_, _, _ = srv.handleDeleteMemories(ctx, req, DeleteMemoriesInput{})
@@ -272,7 +272,7 @@ func TestHandlers_MoreCoverage(t *testing.T) {
 	_, _, _ = srv.handleList(ctx, req, ListMemoriesInput{})
 
 	// handleListStandardsCategories
-	_, _, _ = srv.handleListStandardsCategories(ctx, req, ListStandardsCategoriesInput{SymbolType: "func"})
+	_, _, _ = srv.handleListStandardsCategories(ctx, req, ListStandardsCategoriesInput{Category: "HarvestedCode"})
 
 	// handleContextVacuum
 	_, _, _ = srv.handleContextVacuum(ctx, req, ContextVacuumInput{})

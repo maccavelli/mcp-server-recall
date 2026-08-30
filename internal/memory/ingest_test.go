@@ -113,10 +113,16 @@ func TestMemoryStore_IngestAndProcess(t *testing.T) {
 		}
 	})
 
-	t.Run("DeleteByCategory_Standards", func(t *testing.T) {
-		_, err := store.DeleteByCategory(ctx, "HarvestedCode")
-		if err == nil {
-			t.Fatalf("expected error deleting standards category, got nil")
+	// The standards-category rejection was removed with the harvest subsystem
+	// (0005-MADR). DeleteByCategory is memory-domain scoped, so a category that
+	// only exists in another domain is a no-op rather than an error.
+	t.Run("DeleteByCategory_ForeignDomainCategory", func(t *testing.T) {
+		deleted, err := store.DeleteByCategory(ctx, "HarvestedCode")
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+		if deleted != 0 {
+			t.Errorf("expected 0 memory-domain deletions, got %d", deleted)
 		}
 	})
 }

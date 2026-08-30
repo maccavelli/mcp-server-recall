@@ -136,11 +136,7 @@ func migrateRecordCtx(_ context.Context, data []byte) (*Record, error) {
 	if err := json.Unmarshal(data, &rec); err == nil && rec.Content != "" {
 		// Infer Domain for records written before the Domain field existed.
 		if rec.Domain == "" {
-			if HarvestedCategories[rec.Category] {
-				rec.Domain = DomainStandards
-			} else {
-				rec.Domain = DomainMemories
-			}
+			rec.Domain = DomainMemories
 		}
 		return &rec, nil
 	}

@@ -21,13 +21,8 @@ import (
 )
 
 // DeleteByCategory purges all memory-domain records that match the exact category string
-// by scanning the _idx:cat: secondary index. Rejects standards-domain categories.
+// by scanning the _idx:cat: secondary index.
 func (s *MemoryStore) DeleteByCategory(ctx context.Context, category string) (int, error) {
-	// Reject standards-domain categories upfront.
-	if HarvestedCategories[category] {
-		return 0, fmt.Errorf("category %q belongs to the standards domain; use standards tools to manage it", category)
-	}
-
 	s.mu.Lock()
 	defer s.mu.Unlock()
 

@@ -32,15 +32,6 @@ import (
 	"github.com/maccavelli/mcp-server-recall/internal/search"
 )
 
-// HarvestedCategories defines categories owned exclusively by the standards domain.
-// These are excluded from memory-scoped tools (list_categories, search_memories)
-// and used as inclusion filters for standards-scoped tools.
-var HarvestedCategories = map[string]bool{
-	catHarvestedCode: true,
-	"PackageDoc":     true,
-	catSysDrift:      true,
-}
-
 // CacheMetrics defines the CacheMetrics structure.
 type CacheMetrics struct {
 	Hits       uint64         `json:"hits"`
@@ -892,12 +883,6 @@ func (s *MemoryStore) Save(ctx context.Context, title, key, content, category st
 
 	if domain == "" {
 		domain = DomainMemories
-	}
-
-	// Enforce namespace: memory-domain writes must not use standards categories.
-	if domain == DomainMemories && HarvestedCategories[category] {
-		s.RecordSecurityViolation()
-		return nil, fmt.Errorf("category %q is reserved for the standards domain", category)
 	}
 
 	s.mu.Lock()
@@ -1829,30 +1814,27 @@ func (s *MemoryStore) VacuumMemories(ctx context.Context, dedupThreshold float64
 }
 
 // ---------------------------------------------------------------------------
-// VacuumStandards: Orphan Detection for the standards namespace
+// VacuumStandards: retention reporting for the standards namespace
 // ---------------------------------------------------------------------------
 
-// VacuumStandards scans the standards domain for orphaned drift checksums
-// (SysDrift keys with no corresponding symbol records) and empty packages.
-// When reportOnly is true, analysis is returned without mutations.
+// VacuumStandards scans the standards domain and reports what it holds.
+//
+// It previously performed orphan detection over SysDrift checksum keys written
+// by the harvest subsystem. Harvest was removed in 0005-MADR, so no SysDrift key
+// can be written any more and that detection had nothing left to find. This now
+// mirrors VacuumProjects: a domain-index scan producing a scan count, keeping
+// the VacuumReport contract its callers rely on.
 func (s *MemoryStore) VacuumStandards(ctx context.Context, reportOnly bool) (*VacuumReport, error) {
 	report := &VacuumReport{
 		Namespace:  DomainStandards,
 		ReportOnly: reportOnly,
 	}
 
-	// Collect all standards keys grouped by package.
-	type pkgStats struct {
-		symbolKeys []string
-		driftKey   string
-	}
-	packages := make(map[string]*pkgStats)
-
 	if err := s.db.View(func(txn *badger.Txn) error {
 		it := txn.NewIterator(badger.DefaultIteratorOptions)
 		defer it.Close()
 
-		prefix := []byte("pkg:")
+		prefix := []byte("_idx:domain:" + DomainStandards + ":")
 		for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
 			select {
 			case <-ctx.Done():
@@ -1860,27 +1842,10 @@ func (s *MemoryStore) VacuumStandards(ctx context.Context, reportOnly bool) (*Va
 			default:
 			}
 
-			key := string(it.Item().Key())
-			if err := it.Item().Value(func(v []byte) error {
-				rec, mErr := migrateRecord(v)
-				if mErr == nil {
+			if err := it.Item().Value(func(kVal []byte) error {
+				rec, getErr := loadRecordFromTxn(txn, kVal)
+				if getErr == nil && rec.Domain == DomainStandards {
 					report.TotalScanned++
-
-					// Extract package path from key: "pkg:<path>:<SymbolName>"
-					parts := strings.SplitN(strings.TrimPrefix(key, "pkg:"), ":", 2)
-					if len(parts) >= 2 {
-						pkgPath := parts[0]
-
-						if _, ok := packages[pkgPath]; !ok {
-							packages[pkgPath] = &pkgStats{}
-						}
-
-						if rec.Category == catSysDrift {
-							packages[pkgPath].driftKey = key
-						} else {
-							packages[pkgPath].symbolKeys = append(packages[pkgPath].symbolKeys, key)
-						}
-					}
 				}
 				return nil
 			}); err != nil {
@@ -1890,27 +1855,6 @@ func (s *MemoryStore) VacuumStandards(ctx context.Context, reportOnly bool) (*Va
 		return nil
 	}); err != nil {
 		return nil, fmt.Errorf("standards vacuum scan failed: %w", err)
-	}
-
-	// Find orphans: drift keys with no symbols, or empty packages.
-	var orphanKeys []string
-	for pkgPath, stats := range packages {
-		if stats.driftKey != "" && len(stats.symbolKeys) == 0 {
-			report.StaleEntries = append(report.StaleEntries, StaleEntry{
-				Key:      stats.driftKey,
-				Category: "SysDrift (orphaned)",
-			})
-			orphanKeys = append(orphanKeys, stats.driftKey)
-		}
-		_ = pkgPath // used in the map iteration
-	}
-
-	if !reportOnly && len(orphanKeys) > 0 {
-		if err := s.DeleteBatch(ctx, orphanKeys); err != nil {
-			return report, fmt.Errorf("vacuum standards orphan cleanup failed: %w", err)
-		}
-		report.Pruned = len(orphanKeys)
-		s.triggerDBMaintenance(len(orphanKeys), 1000)
 	}
 
 	return report, nil
@@ -1961,7 +1905,7 @@ func searchByTag(ctx context.Context, txn *badger.Txn, tagFilter string) ([]*Sea
 		if err := it.Item().Value(func(kVal []byte) error {
 			originalKey := string(kVal)
 			rec, getErr := loadRecordFromTxn(txn, kVal)
-			if getErr == nil && !HarvestedCategories[rec.Category] {
+			if getErr == nil && rec.Domain == DomainMemories {
 				candidates = append(candidates, &SearchResult{Key: originalKey, Record: rec})
 			}
 			return nil
@@ -1977,8 +1921,7 @@ func searchGeneral(ctx context.Context, txn *badger.Txn) ([]*SearchResult, error
 	var candidates []*SearchResult
 
 	// Use domain index prefix scan instead of full table scan.
-	// Previously iterated ALL keys and filtered by HarvestedCategories;
-	// now targets only the memories domain via the secondary index.
+	// Targets only the memories domain via the secondary index.
 	prefix := []byte("_idx:domain:" + DomainMemories + ":")
 	opts := badger.DefaultIteratorOptions
 	opts.PrefetchValues = true
@@ -2786,11 +2729,7 @@ func (s *MemoryStore) SaveBatch(ctx context.Context, entries []BatchEntry) (stor
 			if e.Domain != "" {
 				rec.Domain = e.Domain
 			} else {
-				if HarvestedCategories[e.Category] {
-					rec.Domain = DomainStandards
-				} else {
-					rec.Domain = DomainMemories
-				}
+				rec.Domain = DomainMemories
 			}
 
 			if e.SessionID != "" {
@@ -2877,11 +2816,7 @@ func (s *MemoryStore) syncBatchToSearchIndex(entries []BatchEntry) {
 		// Inject synthetic domain tag for SearchScoped conjunction match
 		domain := e.Domain
 		if domain == "" {
-			if HarvestedCategories[e.Category] {
-				domain = DomainStandards
-			} else {
-				domain = DomainMemories
-			}
+			domain = DomainMemories
 		}
 		indexTags := append(slices.Clone(e.Tags), "domain:"+domain)
 		if after, ok := strings.CutPrefix(e.Key, "pkg:"); ok {
@@ -3024,8 +2959,7 @@ func (s *MemoryStore) UpdateWithRetry(fn func(txn *badger.Txn) error) error {
 	return fmt.Errorf("transaction conflict after %d retries: %w", maxRetries, err)
 }
 
-// ListCategories retrieves a unique list of all memory categories with counts.
-// Standards-domain categories (HarvestedCode, PackageDoc, SysDrift) are excluded.
+// ListCategories retrieves a unique list of all categories with counts.
 func (s *MemoryStore) ListCategories(ctx context.Context) (map[string]int, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -3044,9 +2978,7 @@ func (s *MemoryStore) ListCategories(ctx context.Context) (map[string]int, error
 			parts := strings.Split(key, ":")
 			if len(parts) >= 3 {
 				cat := parts[2]
-				if !HarvestedCategories[cat] {
-					categories[cat]++
-				}
+				categories[cat]++
 				it.Next()
 			} else {
 				it.Next()
@@ -3057,179 +2989,34 @@ func (s *MemoryStore) ListCategories(ctx context.Context) (map[string]int, error
 	return categories, err
 }
 
-// StandardsSymbolSummary represents a single symbol entry in the standards overview.
-type StandardsSymbolSummary struct {
-	Name       string `json:"name"`
-	SymbolType string `json:"symbol_type"`
-	Key        string `json:"key"`
+// DomainRecordSummary is a single record entry in a domain overview.
+type DomainRecordSummary struct {
+	Title string `json:"title"`
+	Key   string `json:"key"`
 }
 
-// StandardsPackageOverview represents a package-level grouping of harvested symbols.
-type StandardsPackageOverview struct {
-	TotalSymbols  int                      `json:"total_symbols"`
-	ByType        map[string]int           `json:"by_type"`
-	Symbols       []StandardsSymbolSummary `json:"symbols"`
-	HasPackageDoc bool                     `json:"has_package_doc"`
-	Checksum      string                   `json:"checksum,omitempty,omitzero"`
+// DomainCategoryOverview groups the records of one category within a domain.
+type DomainCategoryOverview struct {
+	TotalRecords int                   `json:"total_records"`
+	Records      []DomainRecordSummary `json:"records"`
 }
 
-// ListStandardsOverview returns a package-grouped overview of all harvested standards data.
-func (s *MemoryStore) ListStandardsOverview(ctx context.Context, packageFilter string) (map[string]*StandardsPackageOverview, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	packages := make(map[string]*StandardsPackageOverview)
-
-	err := s.db.View(func(txn *badger.Txn) error {
-		it := txn.NewIterator(badger.DefaultIteratorOptions)
-		defer it.Close()
-
-		if err := s.scanHarvestedCodeIndex(ctx, txn, it, packageFilter, packages); err != nil {
-			return err
-		}
-		s.scanPackageDocIndex(it, packageFilter, packages)
-		s.scanSysDriftIndex(txn, it, packageFilter, packages)
-		return nil
-	})
-
-	return packages, err
+// ListStandardsOverview returns a category-grouped overview of the standards domain.
+func (s *MemoryStore) ListStandardsOverview(ctx context.Context, categoryFilter string) (map[string]*DomainCategoryOverview, error) {
+	return s.ListDomainOverview(ctx, DomainStandards, categoryFilter)
 }
 
-// scanHarvestedCodeIndex scans the _idx:cat:harvestedcode: prefix to build symbol summaries.
-func (s *MemoryStore) scanHarvestedCodeIndex(ctx context.Context, txn *badger.Txn, it *badger.Iterator, packageFilter string, packages map[string]*StandardsPackageOverview) error {
-	prefix := []byte("_idx:cat:harvestedcode:")
-	for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
-
-		if err := it.Item().Value(func(kVal []byte) error {
-			recordKey := string(kVal)
-
-			// Parse package and symbol name from key: pkg:<path>:<name>
-			if !strings.HasPrefix(recordKey, "pkg:") {
-				return nil
-			}
-			parts := strings.SplitN(recordKey[4:], ":", 2)
-			if len(parts) < 2 {
-				return nil
-			}
-			pkgPath := parts[0]
-			symName := parts[1]
-
-			// Apply package filter if set
-			if packageFilter != "" && !strings.HasPrefix(pkgPath, packageFilter) {
-				return nil
-			}
-
-			var symType string
-			rec, getErr := loadRecordFromTxn(txn, kVal)
-			if getErr == nil {
-				for _, tag := range rec.Tags {
-					if after, ok := strings.CutPrefix(tag, "type:"); ok {
-						symType = after
-						break
-					}
-				}
-			}
-
-			pkg := s.getOrCreatePackageOverview(packages, pkgPath)
-			pkg.TotalSymbols++
-			if symType != "" {
-				pkg.ByType[symType]++
-			}
-			pkg.Symbols = append(pkg.Symbols, StandardsSymbolSummary{
-				Name:       symName,
-				SymbolType: symType,
-				Key:        recordKey,
-			})
-			return nil
-		}); err != nil {
-			slog.Warn("Error reading standards index", "error", err)
-		}
-	}
-	return nil
-}
-
-// scanPackageDocIndex scans the _idx:cat:packagedoc: prefix to flag packages with documentation.
-func (s *MemoryStore) scanPackageDocIndex(it *badger.Iterator, packageFilter string, packages map[string]*StandardsPackageOverview) {
-	pdPrefix := []byte("_idx:cat:packagedoc:")
-	for it.Seek(pdPrefix); it.ValidForPrefix(pdPrefix); it.Next() {
-		if err := it.Item().Value(func(kVal []byte) error {
-			recordKey := string(kVal)
-			if !strings.HasPrefix(recordKey, "pkg:") {
-				return nil
-			}
-			parts := strings.SplitN(recordKey[4:], ":", 2)
-			if len(parts) < 1 {
-				return nil
-			}
-			pkgPath := parts[0]
-			if packageFilter != "" && !strings.HasPrefix(pkgPath, packageFilter) {
-				return nil
-			}
-
-			pkg := s.getOrCreatePackageOverview(packages, pkgPath)
-			pkg.HasPackageDoc = true
-			return nil
-		}); err != nil {
-			slog.Warn("Error reading PackageDoc index", "error", err)
-		}
-	}
-}
-
-// scanSysDriftIndex scans the _idx:cat:sysdrift: prefix to attach API checksums to packages.
-func (s *MemoryStore) scanSysDriftIndex(txn *badger.Txn, it *badger.Iterator, packageFilter string, packages map[string]*StandardsPackageOverview) {
-	driftPrefix := []byte("_idx:cat:sysdrift:")
-	for it.Seek(driftPrefix); it.ValidForPrefix(driftPrefix); it.Next() {
-		if err := it.Item().Value(func(kVal []byte) error {
-			recordKey := string(kVal)
-			// Key: pkg:<path>:CheckDrift
-			if !strings.HasPrefix(recordKey, "pkg:") {
-				return nil
-			}
-			trimmed := strings.TrimPrefix(recordKey, "pkg:")
-			pkgPath := strings.TrimSuffix(trimmed, ":CheckDrift")
-
-			if packageFilter != "" && !strings.HasPrefix(pkgPath, packageFilter) {
-				return nil
-			}
-
-			pkg, ok := packages[pkgPath]
-			if !ok {
-				return nil
-			}
-
-			rec, getErr := loadRecordFromTxn(txn, kVal)
-			if getErr == nil {
-				pkg.Checksum = rec.Content
-			}
-			return nil
-		}); err != nil {
-			slog.Warn("Error reading SysDrift index", "error", err)
-		}
-	}
-}
-
-// getOrCreatePackageOverview returns an existing overview or creates a new one.
-func (s *MemoryStore) getOrCreatePackageOverview(packages map[string]*StandardsPackageOverview, pkgPath string) *StandardsPackageOverview {
-	pkg, ok := packages[pkgPath]
+// getOrCreateCategoryOverview returns the overview bucket for a category, creating it if absent.
+func (s *MemoryStore) getOrCreateCategoryOverview(groups map[string]*DomainCategoryOverview, category string) *DomainCategoryOverview {
+	grp, ok := groups[category]
 	if !ok {
-		pkg = &StandardsPackageOverview{
-			ByType:  make(map[string]int),
-			Symbols: []StandardsSymbolSummary{},
-		}
-		packages[pkgPath] = pkg
+		grp = &DomainCategoryOverview{Records: []DomainRecordSummary{}}
+		groups[category] = grp
 	}
-	return pkg
+	return grp
 }
 
 func recordMatchesDomainSearch(q SearchDomainQuery, rec *Record) bool {
-	if rec.Category == catSysDrift {
-		return false
-	}
 	if q.SymbolType != "" && !slices.Contains(rec.Tags, "type:"+q.SymbolType) {
 		return false
 	}
@@ -3333,15 +3120,15 @@ func (s *MemoryStore) SearchStandards(ctx context.Context, q SearchDomainQuery) 
 	return s.SearchDomain(ctx, q)
 }
 
-// ListDomainOverview returns a package-grouped overview of harvested data for a specific domain.
-// This is the domain-parameterized equivalent of ListStandardsOverview.
-//
-//nolint:gocognit // ListDomainOverview coordinates multi-phase Badger/index maintenance.
-func (s *MemoryStore) ListDomainOverview(ctx context.Context, targetDomain string, packageFilter string) (map[string]*StandardsPackageOverview, error) {
+// ListDomainOverview returns a category-grouped overview of the records held in a
+// domain. It scans the _idx:domain:<domain>: secondary index, so it enumerates
+// every record actually stored in the namespace regardless of how it was written.
+// An optional categoryFilter restricts the result to categories with that prefix.
+func (s *MemoryStore) ListDomainOverview(ctx context.Context, targetDomain string, categoryFilter string) (map[string]*DomainCategoryOverview, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	packages := make(map[string]*StandardsPackageOverview)
+	groups := make(map[string]*DomainCategoryOverview)
 
 	err := s.db.View(func(txn *badger.Txn) error {
 		it := txn.NewIterator(badger.DefaultIteratorOptions)
@@ -3357,50 +3144,25 @@ func (s *MemoryStore) ListDomainOverview(ctx context.Context, targetDomain strin
 
 			if err := it.Item().Value(func(kVal []byte) error {
 				recordKey := string(kVal)
-
-				// Parse package and symbol name from key: pkg:<path>:<name>
-				if !strings.HasPrefix(recordKey, "pkg:") {
+				rec, getErr := loadRecordFromTxn(txn, kVal)
+				if getErr != nil || rec.Domain != targetDomain {
 					return nil
 				}
 
-				rec, getErr := loadRecordFromTxn(txn, kVal)
-				if getErr == nil && rec.Domain == targetDomain {
-					parts := strings.SplitN(recordKey[4:], ":", 2)
-					if len(parts) >= 2 {
-						pkgPath := parts[0]
-						symName := parts[1]
-
-						if packageFilter == "" || strings.HasPrefix(pkgPath, packageFilter) {
-							switch rec.Category {
-							case catHarvestedCode:
-								var symType string
-								for _, tag := range rec.Tags {
-									if after, ok := strings.CutPrefix(tag, "type:"); ok {
-										symType = after
-										break
-									}
-								}
-								pkg := s.getOrCreatePackageOverview(packages, pkgPath)
-								pkg.TotalSymbols++
-								if symType != "" {
-									pkg.ByType[symType]++
-								}
-								pkg.Symbols = append(pkg.Symbols, StandardsSymbolSummary{
-									Name:       symName,
-									SymbolType: symType,
-									Key:        recordKey,
-								})
-							case "PackageDoc":
-								pkg := s.getOrCreatePackageOverview(packages, pkgPath)
-								pkg.HasPackageDoc = true
-							case catSysDrift:
-								if pkg, ok := packages[pkgPath]; ok {
-									pkg.Checksum = rec.Content
-								}
-							}
-						}
-					}
+				category := rec.Category
+				if category == "" {
+					category = "uncategorized"
 				}
+				if categoryFilter != "" && !strings.HasPrefix(category, categoryFilter) {
+					return nil
+				}
+
+				grp := s.getOrCreateCategoryOverview(groups, category)
+				grp.TotalRecords++
+				grp.Records = append(grp.Records, DomainRecordSummary{
+					Title: rec.Title,
+					Key:   recordKey,
+				})
 				return nil
 			}); err != nil {
 				slog.Warn("Error reading domain index", "domain", targetDomain, "error", err)
@@ -3409,7 +3171,7 @@ func (s *MemoryStore) ListDomainOverview(ctx context.Context, targetDomain strin
 		return nil
 	})
 
-	return packages, err
+	return groups, err
 }
 
 // SearchDomain performs a domain-scoped search with multi-dimensional tag filtering.
@@ -3798,10 +3560,6 @@ func (s *MemoryStore) ImportJSONL(ctx context.Context, safePath string, mergeStr
 //nolint:gocognit // DeleteStandards coordinates multi-phase Badger/index maintenance.
 func (s *MemoryStore) DeleteStandards(ctx context.Context, category, pkg string) (int, error) {
 	// Allow empty category and pkg to denote a global domain sweep
-	if category != "" && !HarvestedCategories[category] {
-		return 0, fmt.Errorf("category %q is not a valid standards category", category)
-	}
-
 	// Global Domain Sweep Delegation - move before lock to avoid deadlock
 	if category == "" && pkg == "" {
 		return s.DeleteDomain(ctx, DomainStandards)
@@ -3843,7 +3601,11 @@ func (s *MemoryStore) DeleteStandards(ctx context.Context, category, pkg string)
 					if pkg != "" && !strings.HasPrefix(key, "pkg:"+pkg+":") {
 						return nil
 					}
-					keysToDelete = append(keysToDelete, key)
+					if rec, err := getRecordForDeletion(txn, key); err == nil && rec != nil {
+						if rec.Domain == DomainStandards {
+							keysToDelete = append(keysToDelete, key)
+						}
+					}
 					return nil
 				}); vErr != nil {
 					slog.Warn("Failed to read index value during standards delete", "error", vErr)
@@ -3861,7 +3623,7 @@ func (s *MemoryStore) DeleteStandards(ctx context.Context, category, pkg string)
 			for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
 				key := string(it.Item().Key())
 				if rec, err := getRecordForDeletion(txn, key); err == nil && rec != nil {
-					if HarvestedCategories[rec.Category] {
+					if rec.Domain == DomainStandards {
 						keysToDelete = append(keysToDelete, key)
 					}
 				}
@@ -3913,10 +3675,6 @@ func (s *MemoryStore) DeleteStandards(ctx context.Context, category, pkg string)
 //nolint:gocognit // DeleteProjects coordinates multi-phase Badger/index maintenance.
 func (s *MemoryStore) DeleteProjects(ctx context.Context, category, pkg string) (int, error) {
 	// Allow empty category and pkg to denote a global domain sweep
-	if category != "" && !HarvestedCategories[category] {
-		return 0, fmt.Errorf("category %q is not a valid projects category", category)
-	}
-
 	// Global Domain Sweep Delegation - move before lock to avoid deadlock
 	if category == "" && pkg == "" {
 		return s.DeleteDomain(ctx, DomainProjects)

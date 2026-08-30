@@ -564,9 +564,14 @@ func TestRecordMatchesDomainSearch(t *testing.T) {
 		t.Fatal("should match any")
 	}
 
-	// Test drift category
-	if recordMatchesDomainSearch(SearchDomainQuery{}, &Record{Category: catSysDrift}) {
-		t.Fatal("should not match sys drift")
+	// Category no longer gates domain search. The SysDrift exclusion was removed
+	// with the harvest subsystem (0005-MADR); an unfiltered query matches any
+	// record regardless of category.
+	if !recordMatchesDomainSearch(SearchDomainQuery{}, &Record{Category: "SysDrift"}) {
+		t.Fatal("unfiltered query should match regardless of category")
+	}
+	if !recordMatchesDomainSearch(SearchDomainQuery{}, &Record{Category: "AnythingElse"}) {
+		t.Fatal("unfiltered query should match an arbitrary category")
 	}
 }
 
@@ -650,10 +655,14 @@ func TestDeleteProjects(t *testing.T) {
 		t.Errorf("expected to delete 0, got %d", deleted)
 	}
 
-	// Invalid category
-	_, err = store.DeleteProjects(ctx, "invalid", "")
-	if err == nil {
-		t.Errorf("expected error for invalid category")
+	// An unknown category is no longer rejected up front — the harvest-category
+	// allowlist was removed in 0005-MADR. It is now a domain-gated no-op.
+	unknownDeleted, err := store.DeleteProjects(ctx, "invalid", "")
+	if err != nil {
+		t.Errorf("expected no error for unknown category, got %v", err)
+	}
+	if unknownDeleted != 0 {
+		t.Errorf("expected 0 deletions for unknown projects category, got %d", unknownDeleted)
 	}
 
 	// With pkg inside category loop
@@ -720,10 +729,14 @@ func TestDeleteStandards(t *testing.T) {
 		t.Errorf("expected to delete 0, got %d", deleted)
 	}
 
-	// Invalid category
-	_, err = store.DeleteStandards(ctx, "invalid", "")
-	if err == nil {
-		t.Errorf("expected error for invalid category")
+	// An unknown category is no longer rejected up front — the harvest-category
+	// allowlist was removed in 0005-MADR. It is now a domain-gated no-op.
+	unknownDeleted, err := store.DeleteStandards(ctx, "invalid", "")
+	if err != nil {
+		t.Errorf("expected no error for unknown category, got %v", err)
+	}
+	if unknownDeleted != 0 {
+		t.Errorf("expected 0 deletions for unknown standards category, got %d", unknownDeleted)
 	}
 
 	// With pkg inside category loop

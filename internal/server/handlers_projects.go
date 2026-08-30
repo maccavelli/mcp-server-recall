@@ -15,7 +15,7 @@ import (
 // projectsTools returns the tool catalog for projects-domain retrieval.
 
 func (rs *MCPRecallServer) handleListProjectCategories(ctx context.Context, _ *mcp.CallToolRequest, args ListProjectCategoriesInput) (*mcp.CallToolResult, any, error) {
-	packages, err := rs.store.ListDomainOverview(ctx, memory.DomainProjects, args.Package)
+	groups, err := rs.store.ListDomainOverview(ctx, memory.DomainProjects, args.Category)
 	if err != nil {
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("Error: %v", err)}},
@@ -23,53 +23,31 @@ func (rs *MCPRecallServer) handleListProjectCategories(ctx context.Context, _ *m
 		}, nil, nil
 	}
 
-	// Post-filter by symbol type if requested
-	if args.SymbolType != "" {
-		for pkgPath, pkg := range packages {
-			var filtered []memory.StandardsSymbolSummary
-			for _, sym := range pkg.Symbols {
-				if sym.SymbolType == args.SymbolType {
-					filtered = append(filtered, sym)
-				}
-			}
-			if len(filtered) == 0 {
-				delete(packages, pkgPath)
-			} else {
-				pkg.Symbols = filtered
-				pkg.TotalSymbols = len(filtered)
-			}
-		}
-	}
-
 	// Build summary stats
-	totalPkgs := len(packages)
-	totalSyms := 0
-	totalDocs := 0
-	for _, pkg := range packages {
-		totalSyms += pkg.TotalSymbols
-		if pkg.HasPackageDoc {
-			totalDocs++
-		}
+	totalCats := len(groups)
+	totalRecs := 0
+	for _, grp := range groups {
+		totalRecs += grp.TotalRecords
 	}
 
-	// Build numbered listing
-	var pkgNames []string
-	for p := range packages {
-		pkgNames = append(pkgNames, p)
+	// Build numbered listing for category_number reference
+	var catNames []string
+	for c := range groups {
+		catNames = append(catNames, c)
 	}
-	sort.Strings(pkgNames)
+	sort.Strings(catNames)
 
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "Projects overview: %d packages, %d symbols, %d package docs.\n\n", totalPkgs, totalSyms, totalDocs)
-	for i, name := range pkgNames {
-		pkg := packages[name]
-		docFlag := ""
-		if pkg.HasPackageDoc {
-			docFlag = " [doc]"
-		}
-		fmt.Fprintf(&sb, "%d. %s (%d symbols)%s\n", i+1, name, pkg.TotalSymbols, docFlag)
-		for _, sym := range pkg.Symbols {
-			fmt.Fprintf(&sb, "   - [%s] %s\n", sym.SymbolType, sym.Name)
+	fmt.Fprintf(&sb, "%s overview: %d categories, %d records.\n\n", "Projects", totalCats, totalRecs)
+	for i, name := range catNames {
+		grp := groups[name]
+		fmt.Fprintf(&sb, "%d. %s (%d records)\n", i+1, name, grp.TotalRecords)
+		for _, r := range grp.Records {
+			if r.Title != "" {
+				fmt.Fprintf(&sb, "   - %s — %s\n", r.Key, r.Title)
+			} else {
+				fmt.Fprintf(&sb, "   - %s\n", r.Key)
+			}
 		}
 	}
 
@@ -318,28 +296,32 @@ func (rs *MCPRecallServer) handleDeleteProjects(ctx context.Context, _ *mcp.Call
 	}
 
 	pkgFilter := args.Package
+	catFilter := args.Category
 
+	// category_number selects the Nth category from the overview listing. The
+	// overview is category-grouped since 0005-MADR, so it resolves to a category
+	// rather than a package path.
 	if args.CategoryNumber > 0 {
-		packagesMap, err := rs.store.ListDomainOverview(ctx, memory.DomainProjects, "")
+		groups, err := rs.store.ListDomainOverview(ctx, memory.DomainProjects, "")
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to list projects overview: %w", err)
 		}
-		var pkgNames []string
-		for p := range packagesMap {
-			pkgNames = append(pkgNames, p)
+		var catNames []string
+		for c := range groups {
+			catNames = append(catNames, c)
 		}
-		sort.Strings(pkgNames)
+		sort.Strings(catNames)
 
-		if args.CategoryNumber > len(pkgNames) {
+		if args.CategoryNumber > len(catNames) {
 			return &mcp.CallToolResult{
-				Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("Error: category_number %d is out of bounds (max %d)", args.CategoryNumber, len(pkgNames))}},
+				Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("Error: category_number %d is out of bounds (max %d)", args.CategoryNumber, len(catNames))}},
 				IsError: true,
 			}, nil, nil
 		}
-		pkgFilter = pkgNames[args.CategoryNumber-1]
+		catFilter = catNames[args.CategoryNumber-1]
 	}
 
-	deletedCount, err := rs.store.DeleteProjects(ctx, args.Category, pkgFilter)
+	deletedCount, err := rs.store.DeleteProjects(ctx, catFilter, pkgFilter)
 	if err != nil {
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("Error deleting projects: %v", err)}},

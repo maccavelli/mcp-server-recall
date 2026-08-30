@@ -43,6 +43,7 @@ type UniversalListInput struct {
 	util.UniversalBaseInput
 
 	Namespace       string `json:"namespace" jsonschema:"Target domain. One of: memories, sessions, server_status, standards, projects, dialectic_history, categories, standards_categories, project_categories."`
+	Category        string `json:"category,omitempty,omitzero" jsonschema:"For standards/projects overviews: restrict to categories with this prefix."`
 	Package         string `json:"package,omitempty,omitzero"`
 	SymbolType      string `json:"symbol_type,omitempty,omitzero"`
 	ProjectID       string `json:"project_id,omitempty,omitzero"`
@@ -168,11 +169,11 @@ func (rs *MCPRecallServer) handleUniversalList(ctx context.Context, req *mcp.Cal
 		})
 	case nsStandards, "standards_categories":
 		return rs.handleListStandardsCategories(ctx, req, ListStandardsCategoriesInput{
-			Package: input.Package, SymbolType: input.SymbolType,
+			Category: input.Category,
 		})
 	case nsProjects, "project_categories":
 		return rs.handleListProjectCategories(ctx, req, ListProjectCategoriesInput{
-			Package: input.Package, SymbolType: input.SymbolType,
+			Category: input.Category,
 		})
 	case nsDialecticHistory:
 		return rs.handleListSessions(ctx, req, ListSessionsInput{

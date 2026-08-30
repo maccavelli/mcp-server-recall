@@ -19,8 +19,7 @@ type DeleteMemoriesInput struct {
 type ListProjectCategoriesInput struct {
 	util.UniversalBaseInput
 
-	Package    string `json:"package,omitempty,omitzero"`
-	SymbolType string `json:"symbol_type,omitempty,omitzero"`
+	Category string `json:"category,omitempty,omitzero" jsonschema:"Restrict the overview to categories with this prefix."`
 }
 
 // SearchProjectsInput defines the SearchProjectsInput structure.
@@ -65,8 +64,7 @@ type DeleteProjectsInput struct {
 type ListStandardsCategoriesInput struct {
 	util.UniversalBaseInput
 
-	Package    string `json:"package,omitempty,omitzero"`
-	SymbolType string `json:"symbol_type,omitempty,omitzero"`
+	Category string `json:"category,omitempty,omitzero" jsonschema:"Restrict the overview to categories with this prefix."`
 }
 
 // SearchStandardsInput defines the SearchStandardsInput structure.
