@@ -196,6 +196,10 @@ cp go.mod /tmp/m && cp go.sum /tmp/s && go mod tidy && diff -q go.mod /tmp/m && 
 
 ## Phase 4 — Remove the configuration surface
 
+> **Deviation D-1 (2026-08-29): this phase now runs _after_ Phase 5.** See the
+> Deviation log. The ordering below is preserved as originally approved;
+> ~~Phase 4 → Phase 5~~ is executed as **Phase 5 → Phase 4**.
+
 **Goal:** no harvest knobs in the loader, the accessors, or generated YAML.
 
 ### Files
@@ -239,6 +243,9 @@ cp go.mod /tmp/m && cp go.sum /tmp/s && go mod tidy && diff -q go.mod /tmp/m && 
 
 10. `accessors_test.go`: delete the `HarvestDisableDrift()` call (`:36`) and the
     `HarvestChunkSize` / `HarvestInterBatchSleepMs` assertions (`:53-57`).
+    ~~(as approved)~~ — **amended by D-1:** this list was incomplete. Also
+    remove the three `c.ExcludeDirs()` calls at `:38` and `:80-81`, which the
+    approved step did not name.
 11. `config_test.go`: delete the `HarvestDisableDrift()` call (`:26`).
 
 ### Verification
@@ -262,6 +269,9 @@ grep -nE "harvest|harvest_chunk_size|harvest_inter_batch_sleep_ms" "$TMP"/recall
 ---
 
 ## Phase 5 — Telemetry and dashboard
+
+> **Deviation D-1 (2026-08-29): this phase now runs _before_ Phase 4.** Its
+> contents are unchanged.
 
 **Goal:** stop reporting AST statistics that no longer have a source.
 
@@ -649,6 +659,46 @@ Specifically anticipated deviation risks:
   assumes. Stop; do not paper over it by reinstating a key-prefix scan.
 * **Phase 3** — if `go mod tidy` does not drop `golang.org/x/mod`, some other
   dependency needs it; leave it and note it, do not force-remove.
+
+## Deviation log
+
+### D-1 — 2026-08-29 — Phase 4 cannot compile before Phase 5
+
+**Found during execution of Phase 4.**
+
+Phase 4 deletes `Config.HarvestDisableDrift()` and `Config.ExcludeDirs()`
+(`config.go:340-346`, `:383-388`). Their only non-test consumer is
+`internal/telemetry/snapshot.go:263-264`, which **Phase 5** was scheduled to
+delete. Running the approved order therefore landed a broken build:
+
+```text
+internal/telemetry/snapshot.go:263:22: cfg.HarvestDisableDrift undefined
+internal/telemetry/snapshot.go:264:26: cfg.ExcludeDirs undefined
+```
+
+This violated the plan's own stated invariant that the tree compiles and tests
+green at every commit. The defect is in the plan, not the code — the phase
+contents were correct, only their order was wrong.
+
+A second, related under-scoping surfaced with it: Phase 4 step 10 named only
+`accessors_test.go:36` and `:53-57`, but `:38` and `:80-81` also call
+`c.ExcludeDirs()`.
+
+**Options considered:** (A) swap the two phases; (B) merge them into one commit;
+(C) keep the order behind a temporary zero-value shim.
+
+**Decision (operator, 2026-08-29): Option A.** Phase 5 executes before Phase 4.
+Both phases keep their approved contents and commit messages; only the sequence
+changes. Option B was declined for bundling two unrelated concerns — config
+schema and observability UI — into one reviewable unit and losing the bisect
+point. Option C was not recommended: it ships a deliberately dead accessor for
+one commit solely to preserve a phase number.
+
+**Files added to scope:** none. `internal/config/accessors_test.go` was already
+in Phase 4's file list; only the line range within it grew.
+
+**Consequence of doing nothing:** one commit in the history would not build,
+breaking `git bisect` across the range and failing CI on that commit.
 
 ## Rollback
 
