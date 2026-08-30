@@ -1,5 +1,5 @@
 ---
-status: "proposed"
+status: "accepted"
 date: 2026-08-30
 decision-makers: maccavelli
 pairs-with: 0006-MADR-domain-scoped-secondary-indexes.md
