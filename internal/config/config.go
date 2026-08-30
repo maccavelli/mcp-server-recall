@@ -31,19 +31,11 @@ const (
 	DefaultLogLines = 25
 )
 
-// BatchConfig holds tunable options for SaveBatch and harvest/ingest operations.
+// BatchConfig holds tunable options for SaveBatch and ingest operations.
 type BatchConfig struct {
-	MaxBatchSize             int `mapstructure:"max_batch_size"`
-	HarvestChunkSize         int `mapstructure:"harvest_chunk_size"`
-	HarvestInterBatchSleepMs int `mapstructure:"harvest_inter_batch_sleep_ms"`
-	IngestInterBatchSleepMs  int `mapstructure:"ingest_inter_batch_sleep_ms"`
-	LoadFastWritesEnabled    int `mapstructure:"load_fast_writes_enabled"`
-}
-
-// HarvestConfig holds tunable settings for directory ingestion rules.
-type HarvestConfig struct {
-	DisableDrift bool     `mapstructure:"disable_drift"`
-	ExcludeDirs  []string `mapstructure:"exclude_dirs"`
+	MaxBatchSize            int `mapstructure:"max_batch_size"`
+	IngestInterBatchSleepMs int `mapstructure:"ingest_inter_batch_sleep_ms"`
+	LoadFastWritesEnabled   int `mapstructure:"load_fast_writes_enabled"`
 }
 
 // NamespaceSchema holds the required schema rules for a given namespace.
@@ -60,7 +52,6 @@ type State struct {
 	SearchLimit          int                        `mapstructure:"searchLimit"`
 	EncryptionKey        string                     `mapstructure:"encryptionKey"`
 	DedupThreshold       float64                    `mapstructure:"dedupThreshold"`
-	Harvest              HarvestConfig              `mapstructure:"harvest"`
 	SafeTools            []string                   `mapstructure:"safeTools"`
 	SafeToolsInternal    []string                   `mapstructure:"safeToolsInternal"`
 	Batch                BatchConfig                `mapstructure:"batchsettings"`
@@ -123,14 +114,8 @@ func New(version string) *Config {
 
 	// Batch settings defaults
 	v.SetDefault("batchsettings.max_batch_size", 100)
-	v.SetDefault("batchsettings.harvest_chunk_size", 50)
-	v.SetDefault("batchsettings.harvest_inter_batch_sleep_ms", 500)
 	v.SetDefault("batchsettings.ingest_inter_batch_sleep_ms", 50)
 	v.SetDefault("batchsettings.load_fast_writes_enabled", 0)
-
-	// Native substitution for hardcoded engine noise arrays
-	v.SetDefault("harvest.exclude_dirs", []string{"/vendor/", "/testdata/", "/mocks", "/internal/logs", "/tests", "/cmd/"})
-	v.SetDefault("harvest.disable_drift", false)
 
 	// Baseline structured namespaces (excluding memories)
 	v.SetDefault("authorizedNamespaces", []string{
@@ -162,7 +147,6 @@ func New(version string) *Config {
 		"search",
 		"get",
 		"list",
-		"harvest",
 		"delete",
 		"prune_records",
 		"forget",
@@ -209,7 +193,7 @@ func New(version string) *Config {
 
 		slog.Info("[Viper] Configuration file modified dynamically", "file", e.Name)
 		cfg.refreshState()
-		slog.Info("[Viper] Configuration reloaded into memory", "disable_drift_applied_status", cfg.HarvestDisableDrift())
+		slog.Info("[Viper] Configuration reloaded into memory")
 	})
 
 	return cfg
@@ -337,14 +321,6 @@ func ResolveRecallURL() string {
 	return fmt.Sprintf("http://localhost:%d/mcp", ResolveAPIPort())
 }
 
-// ExcludeDirs performs the ExcludeDirs operation.
-func (c *Config) ExcludeDirs() []string {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	// Return a copy to prevent mutation bugs out-of-scope
-	return slices.Clone(c.state.Harvest.ExcludeDirs)
-}
-
 // Name performs the Name operation.
 func (c *Config) Name() string {
 	c.mu.RLock()
@@ -378,13 +354,6 @@ func (c *Config) BatchSettings() BatchConfig {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.state.Batch
-}
-
-// HarvestDisableDrift performs the HarvestDisableDrift operation.
-func (c *Config) HarvestDisableDrift() bool {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return c.state.Harvest.DisableDrift
 }
 
 // DefaultPurgeDays performs the DefaultPurgeDays operation.

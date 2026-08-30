@@ -23,7 +23,6 @@ func TestConfig_Defaults(t *testing.T) {
 
 	_ = c.ExportDir()
 	_ = c.EncryptionKey()
-	_ = c.HarvestDisableDrift()
 }
 
 // Removed legacy tests

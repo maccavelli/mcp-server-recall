@@ -33,13 +33,8 @@ func TestConfig_AllAccessors(t *testing.T) {
 
 	// Boolean accessors
 	_ = c.SearchEnabled()
-	_ = c.HarvestDisableDrift()
 
 	// Slice accessors — verify they return copies, not nil
-	dirs := c.ExcludeDirs()
-	if dirs == nil {
-		t.Error("expected non-nil exclude dirs slice")
-	}
 	tools := c.SafeTools()
 	if len(tools) == 0 {
 		t.Error("expected at least one safe tool configured")
@@ -49,12 +44,6 @@ func TestConfig_AllAccessors(t *testing.T) {
 	b := c.BatchSettings()
 	if b.MaxBatchSize <= 0 {
 		t.Errorf("expected positive max batch size, got %d", b.MaxBatchSize)
-	}
-	if b.HarvestChunkSize <= 0 {
-		t.Errorf("expected positive harvest chunk size, got %d", b.HarvestChunkSize)
-	}
-	if b.HarvestInterBatchSleepMs < 0 {
-		t.Error("expected non-negative harvest inter batch sleep")
 	}
 
 	// DB path must be absolute after accessor processing
@@ -82,15 +71,18 @@ func TestConfig_AllAccessors(t *testing.T) {
 	}
 }
 
-func TestConfig_ExcludeDirs_IsCopy(t *testing.T) {
+// TestConfig_SliceAccessors_AreCopies pins the defensive-copy contract for slice
+// accessors. It previously exercised ExcludeDirs(), removed with the harvest
+// subsystem in 0005-MADR; SafeTools() carries the same slices.Clone contract.
+func TestConfig_SliceAccessors_AreCopies(t *testing.T) {
 	c := New("test")
-	dirs1 := c.ExcludeDirs()
-	dirs2 := c.ExcludeDirs()
-	// Mutate dirs1 — should not affect dirs2
-	if len(dirs1) > 0 {
-		dirs1[0] = "MUTATED"
-		if dirs2[0] == "MUTATED" {
-			t.Error("ExcludeDirs() returned same slice reference — unsafe for concurrent use")
+	tools1 := c.SafeTools()
+	tools2 := c.SafeTools()
+	// Mutate tools1 — should not affect tools2
+	if len(tools1) > 0 {
+		tools1[0] = "MUTATED"
+		if tools2[0] == "MUTATED" {
+			t.Error("SafeTools() returned same slice reference — unsafe for concurrent use")
 		}
 	}
 }

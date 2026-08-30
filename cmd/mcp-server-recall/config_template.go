@@ -39,7 +39,6 @@ safetools_internal:
     - search
     - get
     - list
-    - harvest
     - delete
     - prune_records
     - forget
@@ -124,8 +123,6 @@ badgerdb:
 
 batchsettings:
     max_batch_size: 100                           # Hard cap on entries per SaveBatch txn
-    harvest_chunk_size: 50                        # Entries per ingestHarvestResult chunk
-    harvest_inter_batch_sleep_ms: 500             # Throttle between harvest chunks (ms)
     ingest_inter_batch_sleep_ms: 100              # Throttle between ProcessPath batches (ms)
     load_fast_writes_enabled: 0                   # 0=normal, 1=fast mode (sleep=0, doubled chunks)
 
@@ -146,39 +143,4 @@ bleveindex:
     segments_per_merge_task: 10                   # Segments merged per operation
     floor_segment_size: 1000                      # Min segment doc count
 
-harvest:
-    disable_drift: false                          # Bypass checksum gating to forcefully reindex unaltered files natively
-    # Directories containing standards or high-value documents to aggressively capture
-    categories:
-        - standards
-        - schema
-        - architecture
-        - docs
-        - core
-    # Paths explicitly excluded from traversing
-    exclude_dirs: []
-    # Root-level ignore patterns (similar to .gitignore)
-    excludes:
-        - node_modules
-        - vendor
-        - .git
-        - testdata
-        - tests
-        - .venv
-        - __pycache__
-        - dist
-        - build
-        - coverage
-    # File extensions that the harvester is permitted to read and index
-    extensions:
-        - .go
-        - .md
-        - .json
-        - .yaml
-        - .yml
-        - .py
-        - .ts
-        - .js
-        - .java
-        - .rs
 `
