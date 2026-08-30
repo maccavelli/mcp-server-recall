@@ -75,14 +75,6 @@ type UniversalGetInput struct {
 	Query     *AttributeQuery `json:"query,omitempty,omitzero" jsonschema:"Attribute-based programmatic query filters. (Not applicable to 'memories' namespace)."`
 }
 
-// UniversalHarvestInput defines parameters for AST extraction.
-type UniversalHarvestInput struct {
-	util.UniversalBaseInput
-
-	Namespace  string `json:"namespace" jsonschema:"Target domain. One of: projects, standards."`
-	TargetPath string `json:"target_path" jsonschema:"Absolute OS directory path to recursively harvest Go source from."`
-}
-
 // UniversalDeleteInput defines parameters for explicit node destruction.
 type UniversalDeleteInput struct {
 	util.UniversalBaseInput
@@ -223,17 +215,6 @@ func (rs *MCPRecallServer) handleUniversalGet(ctx context.Context, req *mcp.Call
 			return rs.handleGetSessions(ctx, req, GetSessionsInput{Domain: targetDomain, Key: input.Key, SessionID: input.SessionID})
 		}
 		return nil, nil, fmt.Errorf("invalid namespace for get binding: %s", input.Namespace)
-	}
-}
-
-func (rs *MCPRecallServer) handleUniversalHarvest(ctx context.Context, req *mcp.CallToolRequest, input UniversalHarvestInput) (*mcp.CallToolResult, any, error) {
-	switch input.Namespace {
-	case nsStandards:
-		return rs.handleHarvestStandards(ctx, req, HarvestStandardsInput{TargetPath: input.TargetPath})
-	case nsProjects:
-		return rs.handleHarvestProjects(ctx, req, HarvestProjectsInput{TargetPath: input.TargetPath})
-	default:
-		return nil, nil, fmt.Errorf("invalid namespace for harvest binding: %s", input.Namespace)
 	}
 }
 

@@ -74,9 +74,6 @@ func (rs *MCPRecallServer) registerAll(srv *mcp.Server, safeMap map[string]bool)
 	if safeMap == nil || safeMap["get"] {
 		add(rs, srv, safeMap, "get", "[DIRECTIVE: Precision Payload Retriever] Retrieves strictly formatted JSON data by exact URI identifier, batch keys, or via programmatic attribute queries (tags, session_id, symbolname). [PROSE: Use this tool when you know the exact key or specific tags of a record and need to download its full content and metadata.] Keywords: retrieve-precision-data, read-specific-uri, attribute-query-retrieval", rs.handleUniversalGet)
 	}
-	if safeMap != nil && safeMap["harvest"] {
-		add(rs, srv, safeMap, "harvest", "CLI Restricted engine for batch-ingesting raw file system directories into the recall backend. This tool is strictly reserved for administrative shell tasks. DO NOT INVOKE THIS TOOL DIRECTLY OR AS AN AGENT.", rs.handleUniversalHarvest)
-	}
 	if safeMap == nil || safeMap["delete"] {
 		add(rs, srv, safeMap, "delete", "[DIRECTIVE: Targeted URI Destructor] Hard-deletes a single structural entity using its exact string identifier. Distinct from garbage collection or conversational erasure. [PROSE: Use this tool to permanently and precisely delete a specific memory, standard, or record from the database by its exact key.] Keywords: hard-delete-entity, obliterate-specific-uri, targeted-structural-removal", rs.handleUniversalDelete)
 	}
@@ -98,7 +95,7 @@ func (rs *MCPRecallServer) ReloadTools() {
 	tools := []string{
 		"remember", "recall", "get_metrics", "save_to_recall", "forget",
 		"reload_cache", "prune_records", "export_records", "import_records",
-		"ingest_files", "search", "list", "get", "harvest", "delete", "update_in_recall",
+		"ingest_files", "search", "list", "get", "delete", "update_in_recall",
 	}
 	rs.mcpServer.RemoveTools(tools...)
 	rs.registerTools()

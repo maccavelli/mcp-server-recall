@@ -282,18 +282,6 @@ func TestHandlers_ContextVacuum(t *testing.T) {
 	}
 }
 
-func TestUniversalHarvest(t *testing.T) {
-	srv, _, cleanup := createTestServer(t)
-	defer cleanup()
-	ctx := context.Background()
-
-	res, _, err := srv.handleUniversalHarvest(ctx, makeReq(`{"namespace": "projects"}`), UniversalHarvestInput{Namespace: "projects"})
-	if err != nil {
-		t.Errorf("UniversalHarvest unexpected error: %v", err)
-	}
-	_ = res
-}
-
 func TestRegistration(t *testing.T) {
 	srv, _, cleanup := createTestServer(t)
 	defer cleanup()
@@ -342,12 +330,6 @@ func TestHandlers_More(t *testing.T) {
 	res, _, _ = srv.handleDeleteStandards(ctx, makeReq(`{"all":true}`), DeleteStandardsInput{All: true})
 	if res == nil {
 		t.Errorf("DeleteStandards returned nil")
-	}
-
-	// UniversalHarvest
-	res, _, _ = srv.handleUniversalHarvest(ctx, makeReq(`{"namespace":"projects","target_path":"/tmp/test"}`), UniversalHarvestInput{Namespace: "projects", TargetPath: "/tmp/test"})
-	if res == nil {
-		t.Errorf("UniversalHarvest returned nil")
 	}
 }
 

@@ -15,20 +15,6 @@ type DeleteMemoriesInput struct {
 	All      bool   `json:"all,omitempty,omitzero"`
 }
 
-// HarvestStandardsInput defines the HarvestStandardsInput structure.
-type HarvestStandardsInput struct {
-	util.UniversalBaseInput
-
-	TargetPath string `json:"target_path"`
-}
-
-// HarvestProjectsInput defines the HarvestProjectsInput structure.
-type HarvestProjectsInput struct {
-	util.UniversalBaseInput
-
-	TargetPath string `json:"target_path"`
-}
-
 // ListProjectCategoriesInput defines the ListProjectCategoriesInput structure.
 type ListProjectCategoriesInput struct {
 	util.UniversalBaseInput
@@ -135,13 +121,6 @@ type IngestFilesInput struct {
 
 	Path      string `json:"path"`
 	Namespace string `json:"namespace,omitempty,omitzero"`
-}
-
-// HarvestInput defines the HarvestInput structure.
-type HarvestInput struct {
-	util.UniversalBaseInput
-
-	TargetDomain string `json:"target_domain"`
 }
 
 // ContextVacuumInput defines the ContextVacuumInput structure.

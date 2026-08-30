@@ -29,8 +29,4 @@ const (
 	nsDialecticHistory   = "dialectic_history"
 	nsModernizerVerdicts = "modernizer_verdicts"
 	nsModernizerTrust    = "modernizer_trust"
-
-	harvestAuth     = "auth"
-	harvestDatabase = "database"
-	harvestTest     = "test"
 )

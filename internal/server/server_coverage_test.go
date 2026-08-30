@@ -85,9 +85,6 @@ func TestHandlers_MoreCoverage(t *testing.T) {
 	// handleSearchProjects
 	_, _, _ = srv.handleSearchProjects(ctx, req, SearchProjectsInput{Query: "func"})
 
-	// handleUniversalHarvest
-	_, _, _ = srv.handleUniversalHarvest(ctx, req, UniversalHarvestInput{})
-
 	// handleGetProject
 	_, _, _ = srv.handleGetProject(ctx, req, GetProjectInput{Key: "missing"})
 	_, _, _ = srv.handleGetProject(ctx, req, GetProjectInput{Key: "func"})
@@ -194,9 +191,6 @@ func TestHandlers_MoreCoverage(t *testing.T) {
 	_ = isSubDir("/a/b", "/a/b/c")
 	_ = isSubDir("/a/b", "/a/b")
 	_ = isSubDir("/a/b", "/c/d")
-
-	// handleUniversalHarvest
-	_, _, _ = srv.handleUniversalHarvest(ctx, req, UniversalHarvestInput{})
 
 	// handleUniversalGet
 	_, _, _ = srv.handleUniversalGet(ctx, req, UniversalGetInput{Key: "foo"})
