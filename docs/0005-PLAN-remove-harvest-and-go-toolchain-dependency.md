@@ -700,6 +700,54 @@ in Phase 4's file list; only the line range within it grew.
 **Consequence of doing nothing:** one commit in the history would not build,
 breaking `git bisect` across the range and failing CI on that commit.
 
+### D-2 — 2026-08-29 — `snapshot.go` has never passed the local precheck
+
+**Found during execution of Phase 5.**
+
+Staging `internal/telemetry/snapshot.go` for the Phase 5 commit failed
+`scripts/go-precheck.sh`. Investigation confirmed the failure is **pre-existing
+and not caused by this work**: `golint` against the unmodified `HEAD~1` copy
+reports **15** findings; the post-Phase-5 file reports **14**. The single
+difference is `ASTStats`, itself one of the undocumented exported types this
+phase deletes — the change strictly reduced the count.
+
+Every exported type in the file lacks a doc comment, plus a name stutter on
+`TelemetrySnapshot`. The precheck allow-list exempts only `config.ConfigDir` and
+`memory.MemoryStore`, so any earlier commit staging this file would have failed
+too. Phases 1-3 passed only because none of them touched it.
+
+CI was never affected: the CI gate is `golangci-lint` (clean); classic `golint`
+is the local pre-commit tool only.
+
+**Procedural note.** The Phase 5 commit initially landed *despite* the failing
+check, because the executing command ran the precheck and `git commit` as
+separate statements rather than chaining them. The commit was amended rather
+than left in history.
+
+**Options considered:** (A) fix the file — add the missing comments and rename
+the stuttering type; (B) comments only, and add `TelemetrySnapshot` to the
+precheck allow-list; (C) fix it in a separate commit, leaving Phase 5 as
+approved.
+
+**Decision (operator, 2026-08-29): Option A.** Added 12 type doc comments and
+one var comment, and renamed `TelemetrySnapshot` → `Snapshot`. The rename is
+contained to `snapshot.go` (declaration and one use, no external referents, no
+collision) and does not change the JSON wire shape, which is driven by struct
+tags — so the dashboard's `snapshot["taxonomy"]` / `["categories"]` reads are
+unaffected. `golint` on the file is now clean: 15 findings → 0.
+
+**Files added to scope:** none. `internal/telemetry/snapshot.go` was already in
+Phase 5's file list; the edit within it grew.
+
+**Consequence of doing nothing:** every later phase staging this file hits the
+same gate, and a commit stays in history with an unchecked file.
+
+**Unrelated observation, not acted on:** `TestRunServe_CanceledContext` failed
+once during this phase with a Badger `mmap ... DISCARD: bad file descriptor`
+error in a temp dir, then passed on two consecutive re-runs. Treated as a
+pre-existing environmental flake — this phase touched only comments and a
+package-internal type name. Recorded here rather than chased.
+
 ## Rollback
 
 Each phase is a single commit and reverts cleanly with `git revert`. Phase 3 is
