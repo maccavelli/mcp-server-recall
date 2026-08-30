@@ -449,6 +449,91 @@ following must be rewritten in the same change:
 | `docs/guides/operations-and-security.md` | 239 | Remove "external Go modules and harvested inputs" from the trust-boundary discussion. |
 | `docs/guides/repository-assessment.md` | 62, 66, 73, 92, 99, 235 | Mark the harvest rows as removed by this MADR and strike the `RECALL_GO_BIN` debt item as resolved by deletion. |
 
+## Amendment — 2026-08-30 — post-implementation audit of domain scoping
+
+Added after the eight implementation phases landed. This amendment corrects one
+statement made during execution and records a defect this MADR's own Phase 6
+widened.
+
+### Correction to deviation D-3
+
+D-3 reported that `searchByTag` relied on the harvested-category filter for
+domain isolation, and the closing summary of that work stated the fix addressed
+only "the harvest half" of a wider pre-existing leak, leaving the rest unfixed.
+
+**That was wrong.** A post-implementation audit verified all three paths of
+`MemoryStore.Search` are fully domain-isolated:
+
+* the Bleve fast path already appended `"domain:" + DomainMemories` to
+  `requiredTags` (`badger.go:1374`);
+* the `searchByTag` fallback carries the `rec.Domain == DomainMemories` check
+  D-3 introduced;
+* the `searchGeneral` fallback scans the `_idx:domain:memories:` prefix.
+
+This was confirmed by seeding a tag shared across `memories`, `sessions`,
+`standards`, `projects`, `dialectic_history`, `documents` and `ecosystem`, then
+asserting only the memories record returns — and proving the assertion has teeth
+by temporarily weakening the `searchByTag` guard, which made all six foreign
+domains leak. The D-3 fix closed the leak completely; there was no remaining
+half.
+
+### Defect found: `ListCategories` was never domain-scoped, and Phase 6 widened it
+
+`handleListCategories` renders its result under the heading **"Memory
+Categories"** (`server.go:998`), but `MemoryStore.ListCategories` scanned the
+`_idx:cat:` index across **every** domain. A category owned by `sessions`,
+`standards`, `projects`, `documents` or `ecosystem` was therefore reported to
+the client as a memory category.
+
+This predates this MADR, but **Phase 6 made it worse**: the
+`!HarvestedCategories[cat]` filter this MADR deleted was suppressing three of
+those foreign categories. Removing it — correct in isolation — admitted
+`HarvestedCode`, `PackageDoc` and `SysDrift` from legacy data into the
+"Memory Categories" listing.
+
+This contradicts the Phase 6 characterisation of that deletion as a simple
+filter removal with no downstream consequence.
+
+`ListCategories` now takes a domain. `handleListCategories` passes
+`DomainMemories`; telemetry passes `""` because the dashboard's Category
+Distribution panel is deliberately a whole-datastore view. An existing test,
+`TestHandleListCategories`, was asserting the defective behaviour — it saved a
+record to `DomainSessions` and required that category to appear under
+"Memory Categories" — and has been re-expressed.
+
+### Full audit of memory-scoped read paths
+
+| Path | Isolation mechanism | Status |
+|---|---|---|
+| `Search` → Bleve | `domain:memories` required tag | correct before this work |
+| `Search` → `searchByTag` | `rec.Domain` check | fixed by D-3 |
+| `Search` → `searchGeneral` | `_idx:domain:memories:` prefix | correct before this work |
+| `ListKeys` | `_idx:domain:memories:` prefix | correct |
+| `GetRecent` | `rec.Domain` check after a global `_idx:t:` scan | correct |
+| `ListCategories` | **none** | **defective — fixed by this amendment** |
+
+`DocCount`, `GetStats` and the telemetry counters are global by design and make
+no memory-scoped claim. The domain-parameterised readers — `ListSessions`,
+`SearchSessions`, `SearchDomain`, `ListDomainOverview`, `FindSessionBySuffix` —
+all verify `rec.Domain` against their argument.
+
+### Remaining issue: index shape, not correctness
+
+Three readers are correct but scan a global index and discard non-matching
+records after loading each one: `searchByTag` (`_idx:tag:<tag>:`), `GetRecent`
+(`_idx:t:`), and `ListSessions` when a `trace`/`project`/`outcome` filter
+replaces its domain prefix (`badger.go:2205-2209`).
+
+`createRecordIndices` writes four **flat** indexes — `_idx:t:`, `_idx:cat:`,
+`_idx:tag:`, `_idx:domain:` — with no composite. A domain-scoped tag lookup is
+therefore not expressible as a single prefix scan today. `searchGeneral` and
+`ListKeys` show the cheaper pattern where a domain prefix alone suffices.
+
+This is a performance characteristic, not a data-isolation bug: the cost is
+O(records carrying the tag) rather than O(records in the domain). It is
+**deliberately not fixed here** — it needs an index-format decision, which is
+its own architectural change. Phase 9 of the plan scopes the investigation.
+
 ## More Information
 
 * Supersedes nothing. Amends no prior decision: 0001–0004 concern config

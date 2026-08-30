@@ -28,6 +28,7 @@ Any failure after a phase that is not explained by that phase is a **deviation**
 ## Phase ordering rationale
 
 Eight phases, ordered so the tree **compiles and tests green at every commit**.
+(Phase 9 was appended later as post-implementation remediation; see below.)
 The two importers of `internal/harvest` (Phases 1 and 2) are severed before the
 package itself is deleted (Phase 3); if the order were reversed, Phases 1-2
 would each land a broken build.
@@ -573,6 +574,70 @@ npx markdownlint-cli2 "README.md" "docs/guides/*.md"
 * Markdown lint clean.
 
 **Commit:** `docs: remove harvest and Go-toolchain requirements from all guides`
+
+---
+
+## Phase 9 — Remediate domain scoping (post-implementation)
+
+Added 2026-08-30 after the post-implementation audit recorded in the MADR
+amendment. Phases 1-8 are complete and merged; this phase is scoped separately
+and does not reopen them.
+
+### 9a — `ListCategories` domain scoping — **DONE**
+
+Landed on branch `fix-domain-scoped-reads` as `c489c0c`.
+
+| File | Change |
+|---|---|
+| `internal/memory/badger.go` | `ListCategories(ctx, domain)`; `""` means whole datastore |
+| `internal/server/server.go` | `handleListCategories` passes `memory.DomainMemories` |
+| `internal/telemetry/snapshot.go` | passes `""` — the dashboard panel is a global distribution |
+| `internal/memory/badger_test.go` | call site updated |
+| `internal/server/server_coverage_test.go` | `TestHandleListCategories` re-expressed; it was asserting the defect |
+| `internal/memory/domain_scoping_test.go` | new — pins every memory-scoped read path |
+
+Verified: `gofmt`, `go vet`, `go mod tidy`, `golangci-lint` (0 issues), all nine
+test packages, four-platform build. Both new tests were proven to have teeth by
+temporarily weakening the guard they protect and observing the expected failure.
+
+### 9b — Composite index for domain-scoped tag lookups — **NOT STARTED**
+
+**Problem.** Three readers are correct but scan a global index and discard
+non-matching records after loading each one:
+
+| Reader | Index scanned | Discard condition |
+|---|---|---|
+| `searchByTag` | `_idx:tag:<tag>:` | `rec.Domain != DomainMemories` |
+| `GetRecent` | `_idx:t:` | `rec.Domain != DomainMemories` |
+| `ListSessions` | `_idx:tag:{trace,project,outcome}:<v>:` | `rec.Domain != domain` (`badger.go:2205-2209`) |
+
+Cost is O(records carrying the tag) rather than O(records in the domain). On a
+store where one `project:` tag spans many namespaces — which `save_to_recall`
+produces, since it tags every namespace with `project:<id>` — the scan loads and
+decompresses records it will immediately drop.
+
+**Why it is not bundled with 9a.** `createRecordIndices` (`badger.go:2621`)
+writes four flat indexes — `_idx:t:`, `_idx:cat:`, `_idx:tag:`, `_idx:domain:` —
+with no composite. Fixing this means changing the on-disk index format, which
+raises questions 9a does not: whether to add a composite
+`_idx:domain_tag:<domain>:<tag>:<key>`, whether to intersect the two existing
+prefix scans instead, whether existing stores need an index rebuild, and whether
+`SyncSearchIndex`/`RepairIndices` can regenerate it on open. That is an
+architectural decision and needs its own MADR.
+
+**Do not start 9b without one.** It is recorded here so the finding is not lost,
+not as approved work.
+
+**Consequence of doing nothing:** a latency characteristic that degrades as the
+datastore grows and as more namespaces share tag values. No correctness impact —
+every affected reader filters correctly today, and `domain_scoping_test.go`
+pins that.
+
+### Acceptance for Phase 9
+
+* 9a: `list namespace=categories` reports only memories-domain categories; the
+  dashboard's Category Distribution still counts every domain.
+* 9b: not accepted; requires a MADR first.
 
 ---
 
