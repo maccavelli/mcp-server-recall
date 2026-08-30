@@ -199,7 +199,7 @@ func TestMemoryStore_VacuumStandards(t *testing.T) {
 	injectRecord(s1Key, &Record{
 		Content:  "standard 1",
 		Domain:   DomainStandards,
-		Category: "HarvestedCode",
+		Category: "ReferenceDoc",
 	})
 
 	// Create another one that is NOT standards

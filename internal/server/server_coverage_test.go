@@ -66,15 +66,15 @@ func TestHandlers_MoreCoverage(t *testing.T) {
 	_, _, _ = srv.handleContextVacuum(ctx, req, ContextVacuumInput{})
 
 	// add some memory data for coverage
-	_, _ = store.Save(ctx, "mypkg/file:func", "pkg:mypkg:func", "body", "HarvestedCode", []string{"type:func"}, memory.DomainProjects, 0.9)
-	_, _ = store.Save(ctx, "mystd", "pkg:mystd:func", "std body", "HarvestedCode", []string{"type:func"}, memory.DomainStandards, 0.9)
+	_, _ = store.Save(ctx, "mypkg/file:func", "pkg:mypkg:func", "body", "ReferenceDoc", []string{"type:func"}, memory.DomainProjects, 0.9)
+	_, _ = store.Save(ctx, "mystd", "pkg:mystd:func", "std body", "ReferenceDoc", []string{"type:func"}, memory.DomainStandards, 0.9)
 	store.SyncSearchIndex(ctx)
 
 	// handleListProjectCategories
-	_, _, _ = srv.handleListProjectCategories(ctx, req, ListProjectCategoriesInput{Category: "HarvestedCode"})
+	_, _, _ = srv.handleListProjectCategories(ctx, req, ListProjectCategoriesInput{Category: "ReferenceDoc"})
 
 	// handleListStandardsCategories
-	_, _, _ = srv.handleListStandardsCategories(ctx, req, ListStandardsCategoriesInput{Category: "HarvestedCode"})
+	_, _, _ = srv.handleListStandardsCategories(ctx, req, ListStandardsCategoriesInput{Category: "ReferenceDoc"})
 
 	// handleDeleteMemories
 	_, _, _ = srv.handleDeleteMemories(ctx, req, DeleteMemoriesInput{Key: "mem1"})
@@ -174,11 +174,11 @@ func TestHandlers_MoreCoverage(t *testing.T) {
 
 	// handleListProjectCategories extra
 	_, _, _ = srv.handleListProjectCategories(ctx, req, ListProjectCategoriesInput{})
-	_, _, _ = srv.handleListProjectCategories(ctx, req, ListProjectCategoriesInput{Category: "HarvestedCode"})
+	_, _, _ = srv.handleListProjectCategories(ctx, req, ListProjectCategoriesInput{Category: "ReferenceDoc"})
 
 	// handleListStandardsCategories extra
 	_, _, _ = srv.handleListStandardsCategories(ctx, req, ListStandardsCategoriesInput{})
-	_, _, _ = srv.handleListStandardsCategories(ctx, req, ListStandardsCategoriesInput{Category: "HarvestedCode"})
+	_, _, _ = srv.handleListStandardsCategories(ctx, req, ListStandardsCategoriesInput{Category: "ReferenceDoc"})
 
 	// handleDeleteMemories extra
 	_, _, _ = srv.handleDeleteMemories(ctx, req, DeleteMemoriesInput{})
@@ -255,12 +255,12 @@ func TestHandlers_MoreCoverage(t *testing.T) {
 	// handleDeleteProjects
 	_, _, _ = srv.handleDeleteProjects(ctx, req, DeleteProjectsInput{Key: "proj1"})
 	_, _, _ = srv.handleDeleteProjects(ctx, req, DeleteProjectsInput{Keys: []string{"proj1"}})
-	_, _, _ = srv.handleDeleteProjects(ctx, req, DeleteProjectsInput{Category: "HarvestedCode", Package: "mypkg"})
+	_, _, _ = srv.handleDeleteProjects(ctx, req, DeleteProjectsInput{Category: "ReferenceDoc", Package: "mypkg"})
 
 	// handleDeleteStandards
 	_, _, _ = srv.handleDeleteStandards(ctx, req, DeleteStandardsInput{Key: "std"})
 	_, _, _ = srv.handleDeleteStandards(ctx, req, DeleteStandardsInput{Keys: []string{"std"}})
-	_, _, _ = srv.handleDeleteStandards(ctx, req, DeleteStandardsInput{Category: "HarvestedCode", Package: "mystd"})
+	_, _, _ = srv.handleDeleteStandards(ctx, req, DeleteStandardsInput{Category: "ReferenceDoc", Package: "mystd"})
 
 	// handleDeleteMemories
 	_, _, _ = srv.handleDeleteMemories(ctx, req, DeleteMemoriesInput{Key: "mem1"})
@@ -272,7 +272,7 @@ func TestHandlers_MoreCoverage(t *testing.T) {
 	_, _, _ = srv.handleList(ctx, req, ListMemoriesInput{})
 
 	// handleListStandardsCategories
-	_, _, _ = srv.handleListStandardsCategories(ctx, req, ListStandardsCategoriesInput{Category: "HarvestedCode"})
+	_, _, _ = srv.handleListStandardsCategories(ctx, req, ListStandardsCategoriesInput{Category: "ReferenceDoc"})
 
 	// handleContextVacuum
 	_, _, _ = srv.handleContextVacuum(ctx, req, ContextVacuumInput{})

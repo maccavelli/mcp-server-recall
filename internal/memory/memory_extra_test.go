@@ -632,13 +632,13 @@ func TestDeleteProjects(t *testing.T) {
 	defer store.Close()
 
 	// Add a project
-	_, err = store.Save(ctx, "proj1-title", "proj1", "project one", "HarvestedCode", nil, DomainProjects, 1.0)
+	_, err = store.Save(ctx, "proj1-title", "proj1", "project one", "ReferenceDoc", nil, DomainProjects, 1.0)
 	if err != nil {
 		t.Fatalf("failed to save: %v", err)
 	}
 
 	// Delete it
-	deleted, err := store.DeleteProjects(ctx, "HarvestedCode", "")
+	deleted, err := store.DeleteProjects(ctx, "ReferenceDoc", "")
 	if err != nil {
 		t.Errorf("DeleteProjects failed: %v", err)
 	}
@@ -647,7 +647,7 @@ func TestDeleteProjects(t *testing.T) {
 	}
 
 	// Delete again, should be 0
-	deleted, err = store.DeleteProjects(ctx, "HarvestedCode", "")
+	deleted, err = store.DeleteProjects(ctx, "ReferenceDoc", "")
 	if err != nil {
 		t.Errorf("DeleteProjects failed: %v", err)
 	}
@@ -666,10 +666,10 @@ func TestDeleteProjects(t *testing.T) {
 	}
 
 	// With pkg inside category loop
-	_, _ = store.Save(ctx, "proj-pkg-title", "pkg:pkg1:proj", "project with pkg", "HarvestedCode", nil, DomainProjects, 1.0)
+	_, _ = store.Save(ctx, "proj-pkg-title", "pkg:pkg1:proj", "project with pkg", "ReferenceDoc", nil, DomainProjects, 1.0)
 	// Add a non-pkg1 project to ensure we skip it
-	_, _ = store.Save(ctx, "proj-pkg-title2", "pkg:pkg2:proj", "project with pkg2", "HarvestedCode", nil, DomainProjects, 1.0)
-	deleted, err = store.DeleteProjects(ctx, "HarvestedCode", "pkg1")
+	_, _ = store.Save(ctx, "proj-pkg-title2", "pkg:pkg2:proj", "project with pkg2", "ReferenceDoc", nil, DomainProjects, 1.0)
+	deleted, err = store.DeleteProjects(ctx, "ReferenceDoc", "pkg1")
 	if err != nil {
 		t.Errorf("DeleteProjects with pkg failed: %v", err)
 	}
@@ -687,7 +687,7 @@ func TestDeleteProjects(t *testing.T) {
 	}
 
 	// Global sweep
-	_, _ = store.Save(ctx, "proj2-title", "proj2", "project two", "HarvestedCode", nil, DomainProjects, 1.0)
+	_, _ = store.Save(ctx, "proj2-title", "proj2", "project two", "ReferenceDoc", nil, DomainProjects, 1.0)
 	deleted, err = store.DeleteProjects(ctx, "", "")
 	if err != nil {
 		t.Errorf("DeleteProjects global sweep failed: %v", err)
@@ -706,13 +706,13 @@ func TestDeleteStandards(t *testing.T) {
 	defer store.Close()
 
 	// Add a standard
-	_, err = store.Save(ctx, "std1-title", "std1", "standard one", "HarvestedCode", nil, DomainStandards, 1.0)
+	_, err = store.Save(ctx, "std1-title", "std1", "standard one", "ReferenceDoc", nil, DomainStandards, 1.0)
 	if err != nil {
 		t.Fatalf("failed to save: %v", err)
 	}
 
 	// Delete it
-	deleted, err := store.DeleteStandards(ctx, "HarvestedCode", "")
+	deleted, err := store.DeleteStandards(ctx, "ReferenceDoc", "")
 	if err != nil {
 		t.Errorf("DeleteStandards failed: %v", err)
 	}
@@ -721,7 +721,7 @@ func TestDeleteStandards(t *testing.T) {
 	}
 
 	// Delete again, should be 0
-	deleted, err = store.DeleteStandards(ctx, "HarvestedCode", "")
+	deleted, err = store.DeleteStandards(ctx, "ReferenceDoc", "")
 	if err != nil {
 		t.Errorf("DeleteStandards failed: %v", err)
 	}
@@ -740,10 +740,10 @@ func TestDeleteStandards(t *testing.T) {
 	}
 
 	// With pkg inside category loop
-	_, _ = store.Save(ctx, "std-pkg-title", "pkg:pkg1:std", "standard with pkg", "HarvestedCode", nil, DomainStandards, 1.0)
+	_, _ = store.Save(ctx, "std-pkg-title", "pkg:pkg1:std", "standard with pkg", "ReferenceDoc", nil, DomainStandards, 1.0)
 	// Add a non-pkg1 standard to ensure we skip it
-	_, _ = store.Save(ctx, "std-pkg-title2", "pkg:pkg2:std", "standard with pkg2", "HarvestedCode", nil, DomainStandards, 1.0)
-	deleted, err = store.DeleteStandards(ctx, "HarvestedCode", "pkg1")
+	_, _ = store.Save(ctx, "std-pkg-title2", "pkg:pkg2:std", "standard with pkg2", "ReferenceDoc", nil, DomainStandards, 1.0)
+	deleted, err = store.DeleteStandards(ctx, "ReferenceDoc", "pkg1")
 	if err != nil {
 		t.Errorf("DeleteStandards with pkg failed: %v", err)
 	}
@@ -761,7 +761,7 @@ func TestDeleteStandards(t *testing.T) {
 	}
 
 	// Global sweep
-	_, _ = store.Save(ctx, "std2-title", "std2", "standard two", "HarvestedCode", nil, DomainStandards, 1.0)
+	_, _ = store.Save(ctx, "std2-title", "std2", "standard two", "ReferenceDoc", nil, DomainStandards, 1.0)
 	deleted, err = store.DeleteStandards(ctx, "", "")
 	if err != nil {
 		t.Errorf("DeleteStandards global sweep failed: %v", err)

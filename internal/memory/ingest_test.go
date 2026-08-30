@@ -117,7 +117,7 @@ func TestMemoryStore_IngestAndProcess(t *testing.T) {
 	// (0005-MADR). DeleteByCategory is memory-domain scoped, so a category that
 	// only exists in another domain is a no-op rather than an error.
 	t.Run("DeleteByCategory_ForeignDomainCategory", func(t *testing.T) {
-		deleted, err := store.DeleteByCategory(ctx, "HarvestedCode")
+		deleted, err := store.DeleteByCategory(ctx, "ReferenceDoc")
 		if err != nil {
 			t.Fatalf("expected no error, got %v", err)
 		}

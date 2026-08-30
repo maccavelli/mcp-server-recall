@@ -3145,24 +3145,28 @@ func (s *MemoryStore) ListDomainOverview(ctx context.Context, targetDomain strin
 			if err := it.Item().Value(func(kVal []byte) error {
 				recordKey := string(kVal)
 				rec, getErr := loadRecordFromTxn(txn, kVal)
-				if getErr != nil || rec.Domain != targetDomain {
+				if getErr != nil {
+					// A corrupt or missing record is skipped, not fatal: one bad
+					// entry must not blank the whole namespace overview.
+					slog.Warn("Skipping unreadable record during domain overview",
+						"domain", targetDomain, "key", recordKey, "error", getErr)
 					return nil
 				}
 
-				category := rec.Category
-				if category == "" {
-					category = "uncategorized"
+				if rec.Domain == targetDomain {
+					category := rec.Category
+					if category == "" {
+						category = "uncategorized"
+					}
+					if categoryFilter == "" || strings.HasPrefix(category, categoryFilter) {
+						grp := s.getOrCreateCategoryOverview(groups, category)
+						grp.TotalRecords++
+						grp.Records = append(grp.Records, DomainRecordSummary{
+							Title: rec.Title,
+							Key:   recordKey,
+						})
+					}
 				}
-				if categoryFilter != "" && !strings.HasPrefix(category, categoryFilter) {
-					return nil
-				}
-
-				grp := s.getOrCreateCategoryOverview(groups, category)
-				grp.TotalRecords++
-				grp.Records = append(grp.Records, DomainRecordSummary{
-					Title: rec.Title,
-					Key:   recordKey,
-				})
 				return nil
 			}); err != nil {
 				slog.Warn("Error reading domain index", "domain", targetDomain, "error", err)

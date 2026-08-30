@@ -28,7 +28,7 @@ func TestMemoryStore_DomainManagement(t *testing.T) {
 	_, _ = store.Save(ctx, "session:1", "sess1", "session 1 data", "sessCat", nil, DomainSessions, 0)
 	_, _ = store.Save(ctx, "session:2", "sess2", "session 2 data", "sessCat", nil, DomainSessions, 0)
 	_, _ = store.Save(ctx, "std:1", "std1", "standard data 1", "SysDrift", nil, DomainStandards, 0)
-	_, _ = store.Save(ctx, "proj:1", "proj1", "project data 1", "HarvestedCode", nil, DomainProjects, 0)
+	_, _ = store.Save(ctx, "proj:1", "proj1", "project data 1", "ReferenceDoc", nil, DomainProjects, 0)
 
 	// Verify they exist
 	if _, err := store.Get(ctx, "sess1"); err != nil {
@@ -58,8 +58,8 @@ func TestMemoryStore_DomainManagement(t *testing.T) {
 	}
 
 	// 4. Test DeleteProjects
-	_, _ = store.Save(ctx, "proj:2", "proj2", "project data 2", "HarvestedCode", nil, DomainProjects, 0)
-	deletedProjs, err := store.DeleteProjects(ctx, "HarvestedCode", "")
+	_, _ = store.Save(ctx, "proj:2", "proj2", "project data 2", "ReferenceDoc", nil, DomainProjects, 0)
+	deletedProjs, err := store.DeleteProjects(ctx, "ReferenceDoc", "")
 	if err != nil {
 		t.Fatalf("DeleteProjects failed: %v", err)
 	}
@@ -68,7 +68,7 @@ func TestMemoryStore_DomainManagement(t *testing.T) {
 	}
 
 	// 5. Test PurgeDomain
-	_, _ = store.Save(ctx, "std:2", "std2", "standard data 2", "HarvestedCode", nil, DomainStandards, 0)
+	_, _ = store.Save(ctx, "std:2", "std2", "standard data 2", "ReferenceDoc", nil, DomainStandards, 0)
 	purged, err := store.PurgeDomain(ctx, DomainStandards)
 	if err != nil {
 		t.Fatalf("PurgeDomain failed: %v", err)
@@ -84,7 +84,7 @@ func TestMemoryStore_DomainManagement(t *testing.T) {
 		Title:     "std:3",
 		Key:       "std3",
 		Value:     "standard data 3",
-		Category:  "HarvestedCode",
+		Category:  "ReferenceDoc",
 		Domain:    DomainStandards,
 		UpdatedAt: time.Now().Add(-time.Hour),
 	}})
@@ -116,7 +116,7 @@ func TestMemoryStore_DomainOverviewAndSearch(t *testing.T) {
 	ctx := context.Background()
 
 	// Add standards
-	_, _ = store.Save(ctx, "std1 title", "pkg:internal/foo:Symbol", "standard one content", "HarvestedCode", nil, DomainStandards, 0)
+	_, _ = store.Save(ctx, "std1 title", "pkg:internal/foo:Symbol", "standard one content", "ReferenceDoc", nil, DomainStandards, 0)
 	_, _ = store.Save(ctx, "std2 title", "pkg:internal/foo:Doc", "package docs", "PackageDoc", nil, DomainStandards, 0)
 	_, _ = store.Save(ctx, "std3 title", "pkg:internal/bar:Drift", "sys drift", "SysDrift", nil, DomainStandards, 0)
 
