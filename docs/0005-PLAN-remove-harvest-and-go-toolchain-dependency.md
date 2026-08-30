@@ -748,6 +748,65 @@ error in a temp dir, then passed on two consecutive re-runs. Treated as a
 pre-existing environmental flake — this phase touched only comments and a
 package-internal type name. Recorded here rather than chased.
 
+### D-3 — 2026-08-29 — `searchByTag` relied on the category filter for domain isolation
+
+**Found during execution of Phase 6, step 4** — the risk the plan flagged in
+advance, confirmed real.
+
+`MemoryStore.Search` is memory-scoped. Its no-tag path, `searchGeneral`, is
+domain-scoped (`prefix := _idx:domain:memories:`) and carries a comment saying it
+was migrated off a `HarvestedCategories` filter. Its tag path, `searchByTag`,
+was never migrated: it walks `_idx:tag:<tag>:`, which has **no domain scoping**,
+and `!HarvestedCategories[rec.Category]` was the only isolation.
+
+Deleting that filter outright would leak standards and projects records into
+memory-scoped tag search. **It is in fact a wider pre-existing bug:** because
+the filter was category-based, records in `sessions`, `server_status`,
+`dialectic_history`, `documents` and `ecosystem` — none of them harvested
+categories — already leak into memory tag search today.
+
+**Resolution (as prescribed by the approved plan):** replace the category filter
+with `rec.Domain == DomainMemories`, matching `searchGeneral`. This both
+preserves the harvest-era isolation and closes the wider leak.
+
+**Files added to scope:** none.
+
+### D-4 — 2026-08-29 — `DeleteStandards` had no domain gate, and `category_number` was mis-wired
+
+**Found during execution of Phase 6, step 8 and Phase 7, step 6.**
+
+Two defects surfaced that the plan did not anticipate:
+
+1. **`DeleteStandards`' category branch never checked the domain.** It appended
+   every key from `_idx:cat:<category>:` unconditionally; the up-front
+   `HarvestedCategories[category]` allowlist was its only protection. Removing
+   that allowlist as Phase 6 specifies would have let
+   `DeleteStandards(ctx, "SomeCategory", "")` delete records in **any** domain
+   sharing that category name. `DeleteProjects` already gated on
+   `rec.Domain == DomainProjects`; `DeleteStandards` did not.
+
+   **Resolution:** gate both branches of `DeleteStandards` on
+   `rec.Domain == DomainStandards`, matching `DeleteProjects`.
+
+2. **`category_number` resolved against a package-grouped listing.** Both delete
+   handlers sorted the overview's keys and passed the Nth as the *package*
+   filter. With the overview now category-grouped, that would pass a category
+   name into the package argument.
+
+   **Resolution:** `category_number` now resolves to a category and feeds the
+   category argument — which is what the parameter's name always implied. The
+   list inputs lose `SymbolType` (meaningless without harvested symbols) and
+   gain `Category`; `UniversalListInput` gains a `Category` field.
+
+**Files added to scope:** `internal/server/handlers_structs.go` and
+`internal/server/handlers_consolidated.go` were already in Phase 1's list but
+are edited again here for the list-input schema change.
+
+**Note on phase landing:** Phases 6 and 7 were committed as a single commit.
+The plan states they are coupled and "land together or not at all" — the tree
+does not build with 6 applied and 7 absent, and a non-building commit would
+break the plan's own compile-green invariant.
+
 ## Rollback
 
 Each phase is a single commit and reverts cleanly with `git revert`. Phase 3 is
