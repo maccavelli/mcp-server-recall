@@ -64,7 +64,7 @@ remain misleading in source and are now called out explicitly.
 
 | Area | State | Evidence and qualification |
 |---|---|---|
-| Badger persistence | Implemented and well tested | `internal/memory/badger.go` and extensive memory tests cover CRUD, batch operations, locking, encryption startup, portability, vacuum, index repair, and close behavior. |
+| Badger persistence | Implemented and well tested; **index schema replaced by 0006-MADR** | `internal/memory/badger.go` and extensive memory tests cover CRUD, batch operations, locking, encryption startup, portability, vacuum, index repair, and close behavior. |
 | Record compression | Implemented | `internal/memory/record.go` Zstd-compresses serialized records and migrates legacy formats. |
 | Search | Implemented, mislabeled | `internal/search` implements Bleve BM25 content search plus `sahilm/fuzzy` key matching. No embedding model or vector index exists. |
 | Namespace isolation | Implemented but uneven at tool layer | Eleven record domains exist. Universal save/get/search/list/delete switch statements support different subsets. |

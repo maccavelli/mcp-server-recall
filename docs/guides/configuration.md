@@ -4,6 +4,11 @@
 where Unix permissions apply, creates the OS data directory, and opens/closes a
 Badger store so a `MANIFEST` normally exists before first service startup.
 
+> **Upgrading:** this release changed the secondary index format. A datastore
+> from an earlier release cannot be read; export to JSONL first and import
+> afterwards. See
+> [Operations and security](operations-and-security.md#upgrading-across-the-index-schema-change).
+
 ## Configuration file locations
 
 | OS | File |

@@ -188,6 +188,42 @@ Memory records are exempt from simple age-based session pruning, but memory
 vacuum can deduplicate or consolidate them. Test report-only output on a backup
 before enabling automated maintenance.
 
+## Upgrading across the index schema change
+
+The release carrying [MADR 0006](../0006-MADR-domain-scoped-secondary-indexes.md)
+replaced the secondary index key schema. The change is deliberate and not
+backwards compatible: **a datastore written by an earlier release cannot be read
+by this one.** There is no migration and none is planned.
+
+Records themselves are unchanged — only the `_idx:`-prefixed secondary index
+entries were replaced. But every listing, search, category and prune path reads
+through that index, so an un-migrated store behaves as though it were empty.
+
+The supported upgrade path is export, upgrade, import:
+
+```bash
+# 1. On the OLD binary, with serve running
+mcp-server-recall export /path/to/backup.jsonl
+
+# 2. Stop serve, install the new binary, then remove the old datastore
+mcp-server-recall purge <namespace>     # or delete the .mcp_recall directory
+
+# 3. On the NEW binary, with serve running
+mcp-server-recall import /path/to/backup.jsonl
+```
+
+Verify the record count matches before discarding the JSONL file. Exports are
+plaintext even when the datastore is encrypted, so treat the file as sensitive
+and remove it once the import is confirmed.
+
+Two constraints are new in this release and can reject a record on import:
+
+- A domain, key, category or tag may not contain a NUL byte (`0x00`). It is
+  reserved as the index key separator and is rejected at the write boundary.
+- Categories and tags containing `:` now round-trip intact. Under the previous
+  schema a category such as `team:platform` was silently truncated to `team`,
+  so a re-import may surface categories that previously appeared merged.
+
 ## Purging a datastore
 
 `purge` removes the configured directory recursively. Its safeguards require a

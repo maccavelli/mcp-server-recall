@@ -158,6 +158,10 @@ paths, checksums, PATH setup, and Go discovery are covered in the
 
 ## Current limitations
 
+- **The secondary index format changed and is not backwards compatible.**
+  A datastore written by an earlier release cannot be read. Export to JSONL
+  before upgrading and import afterwards; see
+  [Operations and security](docs/guides/operations-and-security.md#upgrading-across-the-index-schema-change).
 - Search is lexical and fuzzy, not embedding-based semantic/vector search.
 - The generated YAML includes `apiport`, `badgerdb`, `bleveindex`, and an
   ingest setting that the current runtime does not consume.
