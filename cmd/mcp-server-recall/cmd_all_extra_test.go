@@ -11,7 +11,6 @@ func TestOtherCommands(t *testing.T) {
 		{"export", "/tmp/dummy"},
 		{"import", "/tmp/dummy"},
 		{"purge", "projects"},
-		{"harvest", "repo"},
 		{"serve", "--config", "/nonexistent"},
 		{"prune", "projects"},
 		{"dashboard", "--config", "/nonexistent"},
@@ -27,7 +26,6 @@ func TestAllCommands(t *testing.T) {
 	tests := [][]string{
 		{"configure"},
 		{"export", "fake-domain", "/tmp/fake-out.jsonl"},
-		{"harvest", "memories"},
 		{"import", "fake-domain", "/tmp/fake-in.jsonl"},
 		{"prune", "30"},
 		{"purge", "memories"},
