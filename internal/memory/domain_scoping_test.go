@@ -108,7 +108,7 @@ func TestListCategories_DomainScoping(t *testing.T) {
 	seedCrossDomain(ctx, t, store, "shared")
 
 	// Category names come back lowercased: they are parsed out of the
-	// _idx:cat:<lowercased category>:<key> index key, not the record.
+	// index key's category component, which is lowercased on write.
 	scoped, err := store.ListCategories(ctx, DomainMemories)
 	if err != nil {
 		t.Fatalf("scoped: %v", err)

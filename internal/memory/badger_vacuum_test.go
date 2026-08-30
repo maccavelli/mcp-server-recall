@@ -2,7 +2,6 @@ package memory
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -52,12 +51,18 @@ func TestMemoryStore_VacuumSessions(t *testing.T) {
 		_ = store.db.Update(func(txn *badger.Txn) error {
 			_ = txn.Set([]byte(key), data)
 			// Add domain index
-			idxKey := fmt.Sprintf("_idx:domain:%s:%s", rec.Domain, key)
-			_ = txn.Set([]byte(idxKey), []byte(key))
+			idxKey, ikErr := encodeIndexKey(rec.Domain, kindTime, encodeTimeValue(rec.UpdatedAt), key)
+			if ikErr != nil {
+				t.Fatalf("encode index key: %v", ikErr)
+			}
+			_ = txn.Set(idxKey, nil)
 			// Add tag indices
 			for _, tag := range rec.Tags {
-				tagKey := fmt.Sprintf("_idx:tag:%s:%s", strings.ToLower(tag), key)
-				_ = txn.Set([]byte(tagKey), []byte(key))
+				tagKey, tkErr := encodeIndexKey(rec.Domain, kindTag, strings.ToLower(tag), key)
+				if tkErr != nil {
+					t.Fatalf("encode tag key: %v", tkErr)
+				}
+				_ = txn.Set(tagKey, nil)
 			}
 			return nil
 		})
@@ -128,8 +133,11 @@ func TestMemoryStore_VacuumMemories(t *testing.T) {
 		data, _ := marshalRecord(rec)
 		_ = store.db.Update(func(txn *badger.Txn) error {
 			_ = txn.Set([]byte(key), data)
-			idxKey := fmt.Sprintf("_idx:domain:%s:%s", rec.Domain, key)
-			_ = txn.Set([]byte(idxKey), []byte(key))
+			idxKey, ikErr := encodeIndexKey(rec.Domain, kindTime, encodeTimeValue(rec.UpdatedAt), key)
+			if ikErr != nil {
+				t.Fatalf("encode index key: %v", ikErr)
+			}
+			_ = txn.Set(idxKey, nil)
 			return nil
 		})
 	}
@@ -189,8 +197,11 @@ func TestMemoryStore_VacuumStandards(t *testing.T) {
 		data, _ := marshalRecord(rec)
 		_ = store.db.Update(func(txn *badger.Txn) error {
 			_ = txn.Set([]byte(key), data)
-			idxKey := fmt.Sprintf("_idx:domain:%s:%s", rec.Domain, key)
-			_ = txn.Set([]byte(idxKey), []byte(key))
+			idxKey, ikErr := encodeIndexKey(rec.Domain, kindTime, encodeTimeValue(rec.UpdatedAt), key)
+			if ikErr != nil {
+				t.Fatalf("encode index key: %v", ikErr)
+			}
+			_ = txn.Set(idxKey, nil)
 			return nil
 		})
 	}

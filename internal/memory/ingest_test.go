@@ -95,7 +95,7 @@ func TestMemoryStore_IngestAndProcess(t *testing.T) {
 
 	t.Run("DeleteByCategory", func(t *testing.T) {
 		// Mock entries into badger directly via Save since mockSearchEngine doesn't sync DB keys automatically
-		// but wait DeleteByCategory scans badger using "_idx:cat:...", so it needs real saves
+		// DeleteByCategory scans the category index, so it needs real saves
 		_, _ = store.Save(ctx, "", "purge-key-1", "content", "purge-cat", nil, "", 0)
 		_, _ = store.Save(ctx, "", "purge-key-2", "content", "purge-cat", nil, "", 0)
 

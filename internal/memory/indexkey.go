@@ -3,9 +3,12 @@ package memory
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"strings"
 	"time"
+
+	badger "github.com/dgraph-io/badger/v4"
 )
 
 // Secondary index key schema (0006-MADR).
@@ -152,4 +155,79 @@ func decodeIndexKey(key []byte) (domain string, kind byte, value, recordKey stri
 		return "", 0, "", "", false
 	}
 	return string(parts[1]), parts[2][0], string(parts[3]), string(parts[4]), true
+}
+
+// recordKeyFromIndexItem extracts the record key from an index entry.
+//
+// Index entries carry an empty value, so the record key must come from the key
+// itself. Readers should set PrefetchValues = false when scanning.
+func recordKeyFromIndexItem(item *badger.Item) (string, bool) {
+	_, _, _, recordKey, ok := decodeIndexKey(item.Key())
+	return recordKey, ok
+}
+
+// forEachIndexKey scans an index prefix and yields each referenced record key.
+//
+// Index entries have empty values, so PrefetchValues is disabled: the record key
+// comes from the index key itself. Return false from fn to stop early.
+func forEachIndexKey(ctx context.Context, txn *badger.Txn, prefix []byte, fn func(recordKey string) bool) error {
+	opts := badger.DefaultIteratorOptions
+	opts.PrefetchValues = false
+	it := txn.NewIterator(opts)
+	defer it.Close()
+
+	for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+		recordKey, ok := recordKeyFromIndexItem(it.Item())
+		if !ok {
+			continue
+		}
+		if !fn(recordKey) {
+			return nil
+		}
+	}
+	return nil
+}
+
+// forEachIndexedRecord scans an index prefix and yields each referenced record.
+//
+// Entries whose record has gone are skipped as orphans rather than failing the
+// scan. Set reverse to walk the prefix backwards, which for the time index gives
+// reverse-chronological order; the seek is adjusted accordingly, since a reverse
+// scan must start past the end of the prefix range.
+func forEachIndexedRecord(ctx context.Context, txn *badger.Txn, prefix []byte, reverse bool, fn func(recordKey string, rec *Record) bool) error {
+	opts := badger.DefaultIteratorOptions
+	opts.PrefetchValues = false
+	opts.Reverse = reverse
+	it := txn.NewIterator(opts)
+	defer it.Close()
+
+	seek := prefix
+	if reverse {
+		seek = append(append([]byte{}, prefix...), 0xff)
+	}
+
+	for it.Seek(seek); it.ValidForPrefix(prefix); it.Next() {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+		recordKey, ok := recordKeyFromIndexItem(it.Item())
+		if !ok {
+			continue
+		}
+		rec, err := loadRecordFromTxn(txn, []byte(recordKey))
+		if err != nil {
+			continue // orphaned index entry
+		}
+		if !fn(recordKey, rec) {
+			return nil
+		}
+	}
+	return nil
 }

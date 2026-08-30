@@ -34,7 +34,7 @@ func TestIndexWrite_EntryAccountingAndNUL(t *testing.T) {
 		defer it.Close()
 		for it.Rewind(); it.Valid(); it.Next() {
 			k := it.Item().Key()
-			if bytes.HasPrefix(k, []byte("_idx:")) {
+			if bytes.HasPrefix(k, []byte("_idx:")) { // legacy schema
 				oldIdx++
 			}
 			if isIndexKey(k) {

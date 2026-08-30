@@ -20,39 +20,25 @@ import (
 	"github.com/dgraph-io/badger/v4"
 )
 
-// DeleteByCategory purges all memory-domain records that match the exact category string
-// by scanning the _idx:cat: secondary index.
+// DeleteByCategory purges all memory-domain records that match the exact category
+// string by scanning the memories-domain category index.
 func (s *MemoryStore) DeleteByCategory(ctx context.Context, category string) (int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Phase 1: Collect keys via category index, filtering by domain.
+	// Phase 1: Collect keys via the domain-partitioned category index. The index
+	// is lowercased, so the exact-case match is still verified per record.
 	var ids []string
-	catPrefix := fmt.Appendf(nil, "_idx:cat:%s:", strings.ToLower(category))
+	catPrefix := indexPrefix(DomainMemories, kindCategory, strings.ToLower(category))
 
 	err := s.db.View(func(txn *badger.Txn) error {
-		it := txn.NewIterator(badger.DefaultIteratorOptions)
-		defer it.Close()
-
-		for it.Seek(catPrefix); it.ValidForPrefix(catPrefix); it.Next() {
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			default:
-			}
-
-			if err := it.Item().Value(func(kVal []byte) error {
-				originalKey := string(kVal)
-				rec, getErr := loadRecordFromTxn(txn, kVal)
-				if getErr == nil && rec.Domain == DomainMemories && rec.Category == category {
+		return forEachIndexedRecord(ctx, txn, catPrefix, false,
+			func(originalKey string, rec *Record) bool {
+				if rec.Category == category {
 					ids = append(ids, originalKey)
 				}
-				return nil
-			}); err != nil {
-				slog.Warn("Error scanning category index during delete", "category", category, "error", err)
-			}
-		}
-		return nil
+				return true
+			})
 	})
 	if err != nil {
 		return 0, fmt.Errorf("category index scan failed: %w", err)
@@ -96,28 +82,14 @@ func (s *MemoryStore) DeleteDomain(ctx context.Context, domain string) (int, err
 	var ids []string
 
 	err := s.db.View(func(txn *badger.Txn) error {
-		// Fix #6: Use domain index prefix scan instead of full table scan.
-		// O(K domain keys) instead of O(N total keys).
-		prefix := []byte("_idx:domain:" + domain + ":")
-		opts := badger.DefaultIteratorOptions
-		opts.PrefetchValues = false // Index keys only, no value fetch needed
-		it := txn.NewIterator(opts)
-		defer it.Close()
-
-		for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			default:
-			}
-			// Index key format: _idx:domain:<domain>:<actual_key>
-			idxKey := string(it.Item().Key())
-			actualKey := strings.TrimPrefix(idxKey, string(prefix))
+		// The time index doubles as the domain membership index (0006-MADR):
+		// O(K domain keys) instead of O(N total keys), with no record loads.
+		return forEachIndexKey(ctx, txn, indexPrefix(domain, kindTime, ""), func(actualKey string) bool {
 			if actualKey != "" {
 				ids = append(ids, actualKey)
 			}
-		}
-		return nil
+			return true
+		})
 	})
 	if err != nil {
 		return 0, fmt.Errorf("domain index scan failed: %w", err)

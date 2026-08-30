@@ -1228,31 +1228,20 @@ func loadRecordFromTxn(txn *badger.Txn, key []byte) (*Record, error) {
 // findSimilarLocked scans same-category memory-domain records for Jaccard similarity.
 // Returns the best match above threshold, or nil. Caller must hold s.mu.
 func (s *MemoryStore) findSimilarLocked(content, category string, threshold float64) *SearchResult {
-	catPrefix := fmt.Appendf(nil, "_idx:cat:%s:", strings.ToLower(category))
+	catPrefix := indexPrefix(DomainMemories, kindCategory, strings.ToLower(category))
 	var bestMatch *SearchResult
 	bestScore := 0.0
 
 	if err := s.db.View(func(txn *badger.Txn) error {
-		it := txn.NewIterator(badger.DefaultIteratorOptions)
-		defer it.Close()
-
-		for it.Seek(catPrefix); it.ValidForPrefix(catPrefix); it.Next() {
-			if vErr := it.Item().Value(func(kVal []byte) error {
-				originalKey := string(kVal)
-				rec, getErr := loadRecordFromTxn(txn, kVal)
-				if getErr == nil && rec.Domain == DomainMemories {
-					score := computeJaccard(content, rec.Content)
-					if score >= threshold && score > bestScore {
-						bestScore = score
-						bestMatch = &SearchResult{Key: originalKey, Record: rec}
-					}
+		return forEachIndexedRecord(context.Background(), txn, catPrefix, false,
+			func(originalKey string, rec *Record) bool {
+				score := computeJaccard(content, rec.Content)
+				if score >= threshold && score > bestScore {
+					bestScore = score
+					bestMatch = &SearchResult{Key: originalKey, Record: rec}
 				}
-				return nil
-			}); vErr != nil {
-				slog.Warn("Failed to read index value during dedup scan", "error", vErr)
-			}
-		}
-		return nil
+				return true
+			})
 	}); err != nil {
 		slog.Warn("Dedup scan view failed", "category", category, "error", err)
 	}
@@ -1367,7 +1356,7 @@ func (s *MemoryStore) Search(ctx context.Context, query string, tagFilter string
 		if viewErr := s.db.View(func(txn *badger.Txn) error {
 			var scanErr error
 			if tagFilter != "" {
-				candidates, scanErr = searchByTag(ctx, txn, tagFilter)
+				candidates, scanErr = searchByTag(ctx, txn, DomainMemories, tagFilter)
 			} else {
 				candidates, scanErr = searchGeneral(ctx, txn)
 			}
@@ -1620,37 +1609,19 @@ func (s *MemoryStore) VacuumMemories(ctx context.Context, dedupThreshold float64
 	byCategory := make(map[string][]memEntry)
 
 	if err := s.db.View(func(txn *badger.Txn) error {
-		it := txn.NewIterator(badger.DefaultIteratorOptions)
-		defer it.Close()
-
-		prefix := []byte("_idx:domain:memories:")
-		for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			default:
-			}
-
-			if err := it.Item().Value(func(kVal []byte) error {
-				originalKey := string(kVal)
-				rec, getErr := loadRecordFromTxn(txn, kVal)
-				if getErr == nil && rec.Domain == DomainMemories {
-					if categoryFilter == "" || rec.Category == categoryFilter {
-						age := int(now.Sub(rec.UpdatedAt).Hours() / 24)
-						report.TotalScanned++
-						byCategory[rec.Category] = append(byCategory[rec.Category], memEntry{
-							key:     originalKey,
-							rec:     rec,
-							ageDays: age,
-						})
-					}
+		return forEachIndexedRecord(ctx, txn, indexPrefix(DomainMemories, kindTime, ""), false,
+			func(originalKey string, rec *Record) bool {
+				if categoryFilter == "" || rec.Category == categoryFilter {
+					age := int(now.Sub(rec.UpdatedAt).Hours() / 24)
+					report.TotalScanned++
+					byCategory[rec.Category] = append(byCategory[rec.Category], memEntry{
+						key:     originalKey,
+						rec:     rec,
+						ageDays: age,
+					})
 				}
-				return nil
-			}); err != nil {
-				slog.Warn("Error scanning memory during vacuum", "error", err)
-			}
-		}
-		return nil
+				return true
+			})
 	}); err != nil {
 		return nil, fmt.Errorf("memory vacuum scan failed: %w", err)
 	}
@@ -1780,28 +1751,11 @@ func (s *MemoryStore) VacuumStandards(ctx context.Context, reportOnly bool) (*Va
 	}
 
 	if err := s.db.View(func(txn *badger.Txn) error {
-		it := txn.NewIterator(badger.DefaultIteratorOptions)
-		defer it.Close()
-
-		prefix := []byte("_idx:domain:" + DomainStandards + ":")
-		for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			default:
-			}
-
-			if err := it.Item().Value(func(kVal []byte) error {
-				rec, getErr := loadRecordFromTxn(txn, kVal)
-				if getErr == nil && rec.Domain == DomainStandards {
-					report.TotalScanned++
-				}
-				return nil
-			}); err != nil {
-				slog.Warn("Error scanning standards during vacuum", "error", err)
-			}
-		}
-		return nil
+		return forEachIndexedRecord(ctx, txn, indexPrefix(DomainStandards, kindTime, ""), false,
+			func(_ string, _ *Record) bool {
+				report.TotalScanned++
+				return true
+			})
 	}); err != nil {
 		return nil, fmt.Errorf("standards vacuum scan failed: %w", err)
 	}
@@ -1837,30 +1791,18 @@ func (s *MemoryStore) triggerDBMaintenance(mutated, flattenThreshold int) {
 	}()
 }
 
-// searchByTag performs an O(K) index-based scan for records with a specific tag.
-func searchByTag(ctx context.Context, txn *badger.Txn, tagFilter string) ([]*SearchResult, error) {
+// searchByTag performs an O(K) index-based scan for records carrying a tag
+// within one domain. The tag index is domain-partitioned (0006-MADR), so no
+// post-scan domain filter is needed.
+func searchByTag(ctx context.Context, txn *badger.Txn, domain, tagFilter string) ([]*SearchResult, error) {
 	var candidates []*SearchResult
-	it := txn.NewIterator(badger.DefaultIteratorOptions)
-	defer it.Close()
-
-	prefix := fmt.Appendf(nil, "_idx:tag:%s:", tagFilter)
-	for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		default:
-		}
-
-		if err := it.Item().Value(func(kVal []byte) error {
-			originalKey := string(kVal)
-			rec, getErr := loadRecordFromTxn(txn, kVal)
-			if getErr == nil && rec.Domain == DomainMemories {
-				candidates = append(candidates, &SearchResult{Key: originalKey, Record: rec})
-			}
-			return nil
-		}); err != nil {
-			slog.Warn("Corrupted memory entry detected during search (tag)", "error", err)
-		}
+	err := forEachIndexedRecord(ctx, txn, indexPrefix(domain, kindTag, tagFilter), false,
+		func(originalKey string, rec *Record) bool {
+			candidates = append(candidates, &SearchResult{Key: originalKey, Record: rec})
+			return true
+		})
+	if err != nil {
+		return nil, err
 	}
 	return candidates, nil
 }
@@ -1869,31 +1811,15 @@ func searchByTag(ctx context.Context, txn *badger.Txn, tagFilter string) ([]*Sea
 func searchGeneral(ctx context.Context, txn *badger.Txn) ([]*SearchResult, error) {
 	var candidates []*SearchResult
 
-	// Use domain index prefix scan instead of full table scan.
-	// Targets only the memories domain via the secondary index.
-	prefix := []byte("_idx:domain:" + DomainMemories + ":")
-	opts := badger.DefaultIteratorOptions
-	opts.PrefetchValues = true
-	it := txn.NewIterator(opts)
-	defer it.Close()
-
-	for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		default:
-		}
-
-		if err := it.Item().Value(func(kVal []byte) error {
-			actualKey := string(kVal)
-			rec, getErr := loadRecordFromTxn(txn, kVal)
-			if getErr == nil {
-				candidates = append(candidates, &SearchResult{Key: actualKey, Record: rec})
-			}
-			return nil
-		}); err != nil {
-			slog.Warn("Corrupted memory entry detected during search (general)", "error", err)
-		}
+	// Targets only the memories domain via the time index, which is the domain
+	// membership index under the 0006-MADR schema.
+	err := forEachIndexedRecord(ctx, txn, indexPrefix(DomainMemories, kindTime, ""), false,
+		func(actualKey string, rec *Record) bool {
+			candidates = append(candidates, &SearchResult{Key: actualKey, Record: rec})
+			return true
+		})
+	if err != nil {
+		return nil, err
 	}
 	return candidates, nil
 }
@@ -1997,34 +1923,13 @@ func (s *MemoryStore) GetRecent(ctx context.Context, count int) ([]*SearchResult
 	}
 
 	err := s.db.View(func(txn *badger.Txn) error {
-		opts := badger.DefaultIteratorOptions
-		opts.Reverse = true // Latest first
-
-		it := txn.NewIterator(opts)
-		defer it.Close()
-
-		prefix := []byte("_idx:t:")
-		seekKey := append([]byte(nil), prefix...)
-		seekKey = append(seekKey, 0xff, 0xff, 0xff)
-
-		for it.Seek(seekKey); it.ValidForPrefix(prefix) && len(results) < count; it.Next() {
-			item := it.Item()
-			err := item.Value(func(val []byte) error {
-				originalKey := val
-				rec, getErr := loadRecordFromTxn(txn, originalKey)
-				if getErr == nil && rec.Domain == DomainMemories {
-					results = append(results, &SearchResult{
-						Key:    string(originalKey),
-						Record: rec,
-					})
-				}
-				return nil
+		// The time index is domain-partitioned and fixed-width, so a reverse walk
+		// of the memories prefix yields newest-first with no post-scan filter.
+		return forEachIndexedRecord(ctx, txn, indexPrefix(DomainMemories, kindTime, ""), true,
+			func(originalKey string, rec *Record) bool {
+				results = append(results, &SearchResult{Key: originalKey, Record: rec})
+				return len(results) < count
 			})
-			if err != nil {
-				return err
-			}
-		}
-		return nil
 	})
 
 	if err == nil {
@@ -2038,7 +1943,7 @@ func (s *MemoryStore) GetRecent(ctx context.Context, count int) ([]*SearchResult
 }
 
 // ListKeys retrieves all available keys for knowledge discovery.
-// Scoped exclusively to the memories domain via the _idx:domain:memories: index.
+// Scoped exclusively to the memories domain via its time index.
 func (s *MemoryStore) ListKeys(ctx context.Context) (iter.Seq[*SearchResult], error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -2048,37 +1953,17 @@ func (s *MemoryStore) ListKeys(ctx context.Context) (iter.Seq[*SearchResult], er
 			it := txn.NewIterator(badger.DefaultIteratorOptions)
 			defer it.Close()
 
-			prefix := []byte("_idx:domain:memories:")
 			count := 0
-			stop := false
-			for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
-				if stop {
-					break
-				}
-				select {
-				case <-ctx.Done():
-					return nil
-				default:
-				}
-				if err := it.Item().Value(func(kVal []byte) error {
-					originalKey := string(kVal)
-					rec, getErr := loadRecordFromTxn(txn, kVal)
-					if getErr == nil {
-						count++
-						s.dbHits.Add(1)
-						if !yield(&SearchResult{Key: originalKey, Record: rec}) {
-							stop = true
-						}
-					}
-					return nil
-				}); err != nil {
-					slog.Warn("Corrupted memory entry detected during list", "error", err)
-				}
-			}
+			err := forEachIndexedRecord(ctx, txn, indexPrefix(DomainMemories, kindTime, ""), false,
+				func(originalKey string, rec *Record) bool {
+					count++
+					s.dbHits.Add(1)
+					return yield(&SearchResult{Key: originalKey, Record: rec})
+				})
 			if count == 0 {
 				s.dbMisses.Add(1)
 			}
-			return nil
+			return err
 		}); viewErr != nil {
 			slog.Warn("ListKeys view failed", "error", viewErr)
 		}
@@ -2099,37 +1984,16 @@ func (s *MemoryStore) FindSessionBySuffix(ctx context.Context, domain, suffix st
 	var bestMatch *SearchResult
 
 	err := s.db.View(func(txn *badger.Txn) error {
-		prefix := []byte("_idx:domain:" + domain + ":")
-		opts := badger.DefaultIteratorOptions
-		opts.PrefetchValues = true
-		it := txn.NewIterator(opts)
-		defer it.Close()
-
-		for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			default:
-			}
-
-			if err := it.Item().Value(func(kVal []byte) error {
-				actualKey := string(kVal)
+		return forEachIndexedRecord(ctx, txn, indexPrefix(domain, kindTime, ""), false,
+			func(actualKey string, rec *Record) bool {
 				if !strings.HasSuffix(actualKey, suffix) {
-					return nil
+					return true
 				}
-
-				rec, getErr := loadRecordFromTxn(txn, kVal)
-				if getErr == nil && rec.Domain == domain {
-					if bestMatch == nil || rec.UpdatedAt.After(bestMatch.Record.UpdatedAt) {
-						bestMatch = &SearchResult{Key: actualKey, Record: rec}
-					}
+				if bestMatch == nil || rec.UpdatedAt.After(bestMatch.Record.UpdatedAt) {
+					bestMatch = &SearchResult{Key: actualKey, Record: rec}
 				}
-				return nil
-			}); err != nil {
-				slog.Warn("Error during session suffix scan", "domain", domain, "error", err)
-			}
-		}
-		return nil
+				return true
+			})
 	})
 
 	return bestMatch, err
@@ -2147,77 +2011,46 @@ func (s *MemoryStore) ListSessions(ctx context.Context, domain, projectID, serve
 	}
 
 	return func(yield func(*SearchResult) bool) {
+		// Narrow within the domain rather than replacing its prefix: every index
+		// family is domain-partitioned (0006-MADR), so a tag filter still scans
+		// only this domain.
+		prefix := indexPrefix(domain, kindTime, "")
+		switch {
+		case traceContext != "":
+			prefix = indexPrefix(domain, kindTag, "trace:"+strings.ToLower(traceContext))
+		case projectID != "":
+			prefix = indexPrefix(domain, kindTag, "project:"+strings.ToLower(projectID))
+		case outcome != "":
+			prefix = indexPrefix(domain, kindTag, "outcome:"+strings.ToLower(outcome))
+		}
+
 		if viewErr := s.db.View(func(txn *badger.Txn) error {
-			// Default to domain index, narrow dynamically if tags specify tighter bounds
-			prefixStr := fmt.Sprintf("_idx:domain:%s:", domain)
-			if traceContext != "" {
-				prefixStr = fmt.Sprintf("_idx:tag:trace:%s:", strings.ToLower(traceContext))
-			} else if projectID != "" {
-				prefixStr = fmt.Sprintf("_idx:tag:project:%s:", strings.ToLower(projectID))
-			} else if outcome != "" {
-				prefixStr = fmt.Sprintf("_idx:tag:outcome:%s:", strings.ToLower(outcome))
-			}
-
-			opts := badger.DefaultIteratorOptions
-			opts.Prefix = []byte(prefixStr)
-			opts.PrefetchValues = true // We need the actual key value from the index
-			it := txn.NewIterator(opts)
-			defer it.Close()
-
 			count := 0
-			stop := false
-			for it.Rewind(); it.Valid(); it.Next() {
-				if stop {
-					break
-				}
-				select {
-				case <-ctx.Done():
-					return nil
-				default:
-				}
-				idxItem := it.Item()
-				actualKey, err := idxItem.ValueCopy(nil)
-				if err != nil {
-					continue
-				}
-
+			err := forEachIndexedRecord(ctx, txn, prefix, false, func(actualKey string, rec *Record) bool {
 				// Validate server filter physically on the exact target key bounding
-				if serverID != "" && !strings.HasPrefix(string(actualKey), serverID+":") {
-					continue
+				if serverID != "" && !strings.HasPrefix(actualKey, serverID+":") {
+					return true
 				}
-
-				recItem, err := txn.Get(actualKey)
-				if err != nil {
-					continue // index orphaned?
+				// Client-side cross-filtering for secondary filters not caught by
+				// the primary prefix scan.
+				if !s.matchSessionFilters(rec, projectID, outcome, traceContext) {
+					return true
 				}
-
-				if err := recItem.Value(func(v []byte) error {
-					if rec, err := migrateRecord(v); err == nil && rec.Domain == domain {
-						// Client-side cross-filtering to verify secondary filters not caught by the primary prefix scan
-						if s.matchSessionFilters(rec, projectID, outcome, traceContext) {
-							count++
-							s.dbHits.Add(1)
-							if !yield(&SearchResult{Key: string(actualKey), Record: rec}) {
-								stop = true
-							}
-						}
-					}
-					return nil
-				}); err != nil {
-					slog.Warn("Corrupted session entry detected during list", "error", err)
+				count++
+				s.dbHits.Add(1)
+				if !yield(&SearchResult{Key: actualKey, Record: rec}) {
+					return false
 				}
-
 				// Safety cap: prevent unbounded memory allocation or respect user limit
 				if limit > 0 && count >= limit {
-					break
-				} else if limit <= 0 && count >= 500 { // fallback safety cap
-					break
+					return false
 				}
-			}
+				return limit > 0 || count < 500
+			})
 			if count == 0 {
 				s.dbMisses.Add(1)
 			}
-			return nil
+			return err
 		}); viewErr != nil {
 			slog.Warn("ListSessions view failed", "error", viewErr)
 		}
@@ -2925,29 +2758,32 @@ func (s *MemoryStore) ListCategories(ctx context.Context, domain string) (map[st
 	categories := make(map[string]int)
 	err := s.db.View(func(txn *badger.Txn) error {
 		opts := badger.DefaultIteratorOptions
+		opts.PrefetchValues = false
 		it := txn.NewIterator(opts)
 		defer it.Close()
 
-		prefix := []byte("_idx:cat:")
-		for it.Seek(prefix); it.ValidForPrefix(prefix); {
-			item := it.Item()
-			key := string(item.Key())
-			// Key format: _idx:cat:<category>:<record_key>
-			parts := strings.Split(key, ":")
-			if len(parts) >= 3 {
-				cat := parts[2]
-				if domain == "" {
-					categories[cat]++
-				} else if err := item.Value(func(kVal []byte) error {
-					if rec, gErr := loadRecordFromTxn(txn, kVal); gErr == nil && rec.Domain == domain {
-						categories[cat]++
-					}
-					return nil
-				}); err != nil {
-					slog.Warn("Error reading category index during listing", "category", cat, "error", err)
-				}
+		// A specific domain is a single prefix scan. The whole-store form has no
+		// single prefix, so it walks every index key and filters by kind.
+		var prefix []byte
+		if domain == "" {
+			prefix = indexSentinelPrefix()
+		} else {
+			prefix = indexPrefix(domain, kindCategory, "")
+		}
+
+		for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			default:
 			}
-			it.Next()
+			// The category comes from a decoded key component, never from
+			// splitting on a separator that user data may contain (0006-MADR).
+			_, kind, cat, _, ok := decodeIndexKey(it.Item().Key())
+			if !ok || kind != kindCategory {
+				continue
+			}
+			categories[cat]++
 		}
 		return nil
 	})
@@ -3086,7 +2922,7 @@ func (s *MemoryStore) SearchStandards(ctx context.Context, q SearchDomainQuery) 
 }
 
 // ListDomainOverview returns a category-grouped overview of the records held in a
-// domain. It scans the _idx:domain:<domain>: secondary index, so it enumerates
+// domain. It scans the domain's time index, so it enumerates
 // every record actually stored in the namespace regardless of how it was written.
 // An optional categoryFilter restricts the result to categories with that prefix.
 func (s *MemoryStore) ListDomainOverview(ctx context.Context, targetDomain string, categoryFilter string) (map[string]*DomainCategoryOverview, error) {
@@ -3099,45 +2935,22 @@ func (s *MemoryStore) ListDomainOverview(ctx context.Context, targetDomain strin
 		it := txn.NewIterator(badger.DefaultIteratorOptions)
 		defer it.Close()
 
-		prefix := []byte("_idx:domain:" + targetDomain + ":")
-		for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			default:
-			}
-
-			if err := it.Item().Value(func(kVal []byte) error {
-				recordKey := string(kVal)
-				rec, getErr := loadRecordFromTxn(txn, kVal)
-				if getErr != nil {
-					// A corrupt or missing record is skipped, not fatal: one bad
-					// entry must not blank the whole namespace overview.
-					slog.Warn("Skipping unreadable record during domain overview",
-						"domain", targetDomain, "key", recordKey, "error", getErr)
-					return nil
+		return forEachIndexedRecord(ctx, txn, indexPrefix(targetDomain, kindTime, ""), false,
+			func(recordKey string, rec *Record) bool {
+				category := rec.Category
+				if category == "" {
+					category = "uncategorized"
 				}
-
-				if rec.Domain == targetDomain {
-					category := rec.Category
-					if category == "" {
-						category = "uncategorized"
-					}
-					if categoryFilter == "" || strings.HasPrefix(category, categoryFilter) {
-						grp := s.getOrCreateCategoryOverview(groups, category)
-						grp.TotalRecords++
-						grp.Records = append(grp.Records, DomainRecordSummary{
-							Title: rec.Title,
-							Key:   recordKey,
-						})
-					}
+				if categoryFilter == "" || strings.HasPrefix(category, categoryFilter) {
+					grp := s.getOrCreateCategoryOverview(groups, category)
+					grp.TotalRecords++
+					grp.Records = append(grp.Records, DomainRecordSummary{
+						Title: rec.Title,
+						Key:   recordKey,
+					})
 				}
-				return nil
-			}); err != nil {
-				slog.Warn("Error reading domain index", "domain", targetDomain, "error", err)
-			}
-		}
-		return nil
+				return true
+			})
 	})
 
 	return groups, err
@@ -3196,40 +3009,24 @@ func (s *MemoryStore) SearchDomain(ctx context.Context, q SearchDomainQuery) (it
 			it := txn.NewIterator(badger.DefaultIteratorOptions)
 			defer it.Close()
 
-			prefix := []byte("_idx:domain:" + q.TargetDomain + ":")
-			for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
-				select {
-				case <-ctx.Done():
-					return ctx.Err()
-				default:
-				}
-
-				if err := it.Item().Value(func(kVal []byte) error {
-					recordKey := string(kVal)
-
-					// Apply Key guards proactively before fetching payload
+			if err := forEachIndexedRecord(ctx, txn, indexPrefix(q.TargetDomain, kindTime, ""), false,
+				func(recordKey string, rec *Record) bool {
+					// Apply key guards before considering the payload.
 					if q.KeyPrefix != "" && !strings.HasPrefix(recordKey, q.KeyPrefix) {
-						return nil
+						return true
 					}
 					if q.KeySuffix != "" && !strings.HasSuffix(recordKey, q.KeySuffix) {
-						return nil
+						return true
 					}
-
-					// Package filter on key prefix proactively
-					if q.PackageFilter != "" {
-						if !strings.HasPrefix(recordKey, "pkg:"+q.PackageFilter) {
-							return nil
-						}
+					if q.PackageFilter != "" && !strings.HasPrefix(recordKey, "pkg:"+q.PackageFilter) {
+						return true
 					}
-
-					rec, getErr := loadRecordFromTxn(txn, kVal)
-					if getErr == nil && recordMatchesDomainSearch(q, rec) {
+					if recordMatchesDomainSearch(q, rec) {
 						candidates = append(candidates, &SearchResult{Key: recordKey, Record: rec})
 					}
-					return nil
+					return true
 				}); err != nil {
-					slog.Warn("Error during domain search", "domain", q.TargetDomain, "error", err)
-				}
+				slog.Warn("Error during domain search", "domain", q.TargetDomain, "error", err)
 			}
 			return nil
 		}); viewErr != nil {
@@ -3561,26 +3358,16 @@ func (s *MemoryStore) DeleteStandards(ctx context.Context, category, pkg string)
 	// First pass: collect matching domains logic
 	if category != "" {
 		if err := s.db.View(func(txn *badger.Txn) error {
-			it := txn.NewIterator(badger.DefaultIteratorOptions)
-			defer it.Close()
-			prefix := fmt.Appendf(nil, "_idx:cat:%s:", strings.ToLower(category))
-			for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
-				if vErr := it.Item().Value(func(kVal []byte) error {
-					key := string(kVal)
-					if pkg != "" && !strings.HasPrefix(key, "pkg:"+pkg+":") {
-						return nil
-					}
-					if rec, err := getRecordForDeletion(txn, key); err == nil && rec != nil {
-						if rec.Domain == DomainStandards {
-							keysToDelete = append(keysToDelete, key)
-						}
-					}
-					return nil
-				}); vErr != nil {
-					slog.Warn("Failed to read index value during standards delete", "error", vErr)
+			// The category index is domain-partitioned, so no post-scan domain
+			// check is needed (0006-MADR).
+			prefix := indexPrefix(DomainStandards, kindCategory, strings.ToLower(category))
+			return forEachIndexKey(ctx, txn, prefix, func(key string) bool {
+				if pkg != "" && !strings.HasPrefix(key, "pkg:"+pkg+":") {
+					return true
 				}
-			}
-			return nil
+				keysToDelete = append(keysToDelete, key)
+				return true
+			})
 		}); err != nil {
 			slog.Warn("Failed to scan category index during standards delete", "category", category, "error", err)
 		}
@@ -3674,26 +3461,16 @@ func (s *MemoryStore) DeleteProjects(ctx context.Context, category, pkg string) 
 
 	if category != "" {
 		if err := s.db.View(func(txn *badger.Txn) error {
-			it := txn.NewIterator(badger.DefaultIteratorOptions)
-			defer it.Close()
-			prefix := fmt.Appendf(nil, "_idx:cat:%s:", strings.ToLower(category))
-			for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
-				if vErr := it.Item().Value(func(kVal []byte) error {
-					key := string(kVal)
-					if pkg != "" && !strings.HasPrefix(key, "pkg:"+pkg+":") {
-						return nil
-					}
-					if rec, err := getRecordForDeletion(txn, key); err == nil && rec != nil {
-						if rec.Domain == DomainProjects {
-							keysToDelete = append(keysToDelete, key)
-						}
-					}
-					return nil
-				}); vErr != nil {
-					slog.Warn("Failed to read index value during projects delete", "error", vErr)
+			// The category index is domain-partitioned, so no post-scan domain
+			// check is needed (0006-MADR).
+			prefix := indexPrefix(DomainProjects, kindCategory, strings.ToLower(category))
+			return forEachIndexKey(ctx, txn, prefix, func(key string) bool {
+				if pkg != "" && !strings.HasPrefix(key, "pkg:"+pkg+":") {
+					return true
 				}
-			}
-			return nil
+				keysToDelete = append(keysToDelete, key)
+				return true
+			})
 		}); err != nil {
 			slog.Warn("Failed to scan category index during projects delete", "category", category, "error", err)
 		}
@@ -3764,19 +3541,12 @@ func (s *MemoryStore) PurgeDomain(ctx context.Context, targetDomain string) (int
 
 	if err := s.db.View(func(txn *badger.Txn) error {
 		// Fix #7: Use domain index prefix scan instead of full table scan.
-		prefix := []byte("_idx:domain:" + targetDomain + ":")
-		opts := badger.DefaultIteratorOptions
-		opts.PrefetchValues = false
-		it := txn.NewIterator(opts)
-		defer it.Close()
-		for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
-			idxKey := string(it.Item().Key())
-			actualKey := strings.TrimPrefix(idxKey, string(prefix))
+		return forEachIndexKey(ctx, txn, indexPrefix(targetDomain, kindTime, ""), func(actualKey string) bool {
 			if actualKey != "" {
 				keysToDelete = append(keysToDelete, actualKey)
 			}
-		}
-		return nil
+			return true
+		})
 	}); err != nil {
 		return 0, fmt.Errorf("purge scan failed: %w", err)
 	}
@@ -3846,16 +3616,9 @@ func (s *MemoryStore) PruneDomain(ctx context.Context, targetDomain string, days
 		// Fix #8: Use domain index prefix scan when targetDomain is specified.
 		// When targetDomain is empty (global prune), fall back to full scan.
 		if targetDomain != "" {
-			prefix := []byte("_idx:domain:" + targetDomain + ":")
-			opts := badger.DefaultIteratorOptions
-			opts.PrefetchValues = false
-			it := txn.NewIterator(opts)
-			defer it.Close()
-			for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
-				idxKey := string(it.Item().Key())
-				actualKey := strings.TrimPrefix(idxKey, string(prefix))
+			if err := forEachIndexKey(ctx, txn, indexPrefix(targetDomain, kindTime, ""), func(actualKey string) bool {
 				if actualKey == "" {
-					continue
+					return true
 				}
 				// Still need to read the record for time-based filtering
 				if rec, err := getRecordForDeletion(txn, actualKey); err == nil && rec != nil {
@@ -3863,6 +3626,9 @@ func (s *MemoryStore) PruneDomain(ctx context.Context, targetDomain string, days
 						keysToDelete = append(keysToDelete, actualKey)
 					}
 				}
+				return true
+			}); err != nil {
+				return err
 			}
 		} else {
 			// Global prune: full scan is correct since all domains are eligible
@@ -3938,84 +3704,52 @@ func (s *MemoryStore) GetByAttributes(ctx context.Context, domain string, query 
 
 	results := make(map[string]*Record)
 	err := s.db.View(func(txn *badger.Txn) error {
-		prefixStr := fmt.Sprintf("_idx:domain:%s:", domain)
-		opts := badger.DefaultIteratorOptions
-		opts.Prefix = []byte(prefixStr)
-		opts.PrefetchValues = true
-
-		it := txn.NewIterator(opts)
-		defer it.Close()
-
-		for it.Rewind(); it.Valid(); it.Next() {
-			idxItem := it.Item()
-			actualKey, err := idxItem.ValueCopy(nil)
-			if err != nil {
-				continue
-			}
-
-			// Fetch the actual record
-			recItem, err := txn.Get(actualKey)
-			if err != nil {
-				continue
-			}
-
-			var rec *Record
-			err = recItem.Value(func(v []byte) error {
-				r, mErr := migrateRecord(v)
-				if mErr != nil {
-					return mErr
+		return forEachIndexedRecord(ctx, txn, indexPrefix(domain, kindTime, ""), false,
+			func(actualKey string, rec *Record) bool {
+				// Apply Filters
+				if query.SessionID != "" && rec.SessionID != query.SessionID {
+					return true
 				}
-				rec = r
-				return nil
+				if query.SymbolName != "" && rec.SymbolName != query.SymbolName {
+					return true
+				}
+				if query.SourcePath != "" && rec.SourcePath != query.SourcePath {
+					return true
+				}
+				if query.Category != "" && rec.Category != query.Category {
+					return true
+				}
+
+				if len(query.Tags) > 0 {
+					// Combine outer tags with potential inner JSON tags
+					allTags := append([]string{}, rec.Tags...)
+					var innerData struct {
+						Tags []string `json:"tags"`
+					}
+					if err := json.Unmarshal([]byte(rec.Content), &innerData); err == nil && len(innerData.Tags) > 0 {
+						allTags = append(allTags, innerData.Tags...)
+					}
+
+					matched := 0
+					for _, qtag := range query.Tags {
+						if slices.Contains(allTags, qtag) {
+							matched++
+						}
+					}
+					if query.TagMatchMode == fieldAny {
+						if matched == 0 {
+							return true
+						}
+					} else { // default to "all"
+						if matched < len(query.Tags) {
+							return true
+						}
+					}
+				}
+
+				results[actualKey] = rec
+				return true
 			})
-			if err != nil || rec == nil {
-				continue
-			}
-
-			// Apply Filters
-			if query.SessionID != "" && rec.SessionID != query.SessionID {
-				continue
-			}
-			if query.SymbolName != "" && rec.SymbolName != query.SymbolName {
-				continue
-			}
-			if query.SourcePath != "" && rec.SourcePath != query.SourcePath {
-				continue
-			}
-			if query.Category != "" && rec.Category != query.Category {
-				continue
-			}
-
-			if len(query.Tags) > 0 {
-				// Combine outer tags with potential inner JSON tags
-				allTags := append([]string{}, rec.Tags...)
-				var innerData struct {
-					Tags []string `json:"tags"`
-				}
-				if err := json.Unmarshal([]byte(rec.Content), &innerData); err == nil && len(innerData.Tags) > 0 {
-					allTags = append(allTags, innerData.Tags...)
-				}
-
-				matched := 0
-				for _, qtag := range query.Tags {
-					if slices.Contains(allTags, qtag) {
-						matched++
-					}
-				}
-				if query.TagMatchMode == fieldAny {
-					if matched == 0 {
-						continue
-					}
-				} else { // default to "all"
-					if matched < len(query.Tags) {
-						continue
-					}
-				}
-			}
-
-			results[string(actualKey)] = rec
-		}
-		return nil
 	})
 
 	return results, err
@@ -4030,28 +3764,11 @@ func (s *MemoryStore) VacuumProjects(ctx context.Context, reportOnly bool) (*Vac
 	}
 
 	if err := s.db.View(func(txn *badger.Txn) error {
-		it := txn.NewIterator(badger.DefaultIteratorOptions)
-		defer it.Close()
-
-		prefix := []byte("_idx:domain:projects:")
-		for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			default:
-			}
-
-			if err := it.Item().Value(func(kVal []byte) error {
-				rec, getErr := loadRecordFromTxn(txn, kVal)
-				if getErr == nil && rec.Domain == DomainProjects {
-					report.TotalScanned++
-				}
-				return nil
-			}); err != nil {
-				slog.Warn("Error scanning projects during vacuum", "error", err)
-			}
-		}
-		return nil
+		return forEachIndexedRecord(ctx, txn, indexPrefix(DomainProjects, kindTime, ""), false,
+			func(_ string, _ *Record) bool {
+				report.TotalScanned++
+				return true
+			})
 	}); err != nil {
 		return nil, fmt.Errorf("projects vacuum scan failed: %w", err)
 	}
