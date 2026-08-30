@@ -39,10 +39,10 @@ func (rs *MCPRecallServer) handleListStandardsCategories(ctx context.Context, _ 
 	sort.Strings(catNames)
 
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "%s overview: %d categories, %d records.\n\n", "Standards", totalCats, totalRecs)
+	fmt.Fprintf(&sb, "Standards overview: %d %s, %d %s.\n\n", totalCats, plural(totalCats, "category", "categories"), totalRecs, plural(totalRecs, "record", "records"))
 	for i, name := range catNames {
 		grp := groups[name]
-		fmt.Fprintf(&sb, "%d. %s (%d records)\n", i+1, name, grp.TotalRecords)
+		fmt.Fprintf(&sb, "%d. %s (%d %s)\n", i+1, name, grp.TotalRecords, plural(grp.TotalRecords, "record", "records"))
 		for _, r := range grp.Records {
 			if r.Title != "" {
 				fmt.Fprintf(&sb, "   - %s — %s\n", r.Key, r.Title)

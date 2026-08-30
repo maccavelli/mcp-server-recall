@@ -30,3 +30,11 @@ const (
 	nsModernizerVerdicts = "modernizer_verdicts"
 	nsModernizerTrust    = "modernizer_trust"
 )
+
+// plural picks the singular or plural form for a count, for listing summaries.
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return one
+	}
+	return many
+}
