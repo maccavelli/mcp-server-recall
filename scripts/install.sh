@@ -88,7 +88,21 @@ Intel Macs have no supported current build."
 }
 
 verify_and_resolve() {
-    _line=$(grep -E "  ${PRODUCT}-${OS}-${ARCH}-[0-9]" "$TMP_DIR/SHA256SUMS" | head -n 1) || true
+    # Canonical releases (MADR 0005) list the exact downloaded basename;
+    # pre-canonical releases listed a version-suffixed name while the alias was
+    # downloaded, so only the hash VALUE could be compared. Both shapes are
+    # looked up and a manifest carrying BOTH is ambiguous: preferring either
+    # would let an appended line authorize a substituted binary, so it fails
+    # closed instead.
+    _canon=$(grep -E "  ${PRODUCT}-${OS}-${ARCH}$" "$TMP_DIR/SHA256SUMS" | head -n 1) || true
+    _versioned=$(grep -E "  ${PRODUCT}-${OS}-${ARCH}-[0-9]" "$TMP_DIR/SHA256SUMS" | head -n 1) || true
+    if [ -n "$_canon" ] && [ -n "$_versioned" ]; then
+        die 2 "ambiguous SHA256SUMS: both a canonical and a versioned entry exist for ${PRODUCT}-${OS}-${ARCH}
+A conforming release lists one shape per manifest. Refusing to choose.
+Nothing was installed."
+    fi
+    _line=$_canon
+    [ -n "$_line" ] || _line=$_versioned
     [ -n "$_line" ] || die 2 "no checksum entry for ${PRODUCT}-${OS}-${ARCH} in SHA256SUMS"
 
     _want=$(printf '%s\n' "$_line" | awk '{print $1}')
@@ -101,8 +115,14 @@ verify_and_resolve() {
   got      $_got
 Nothing was installed."
     fi
-    RESOLVED_VER=${_name#"${PRODUCT}-${OS}-${ARCH}-"}
-    RESOLVED_VER=${RESOLVED_VER%.exe}
+    if [ "$_name" = "${PRODUCT}-${OS}-${ARCH}" ] || [ "$_name" = "${PRODUCT}-${OS}-${ARCH}.exe" ]; then
+        # A canonical entry carries no version in its name; fall back to the
+        # pinned tag rather than inventing one.
+        RESOLVED_VER=${PIN_VERSION:-}
+    else
+        RESOLVED_VER=${_name#"${PRODUCT}-${OS}-${ARCH}-"}
+        RESOLVED_VER=${RESOLVED_VER%.exe}
+    fi
     vlog "$PRODUCT verified, version $RESOLVED_VER"
 }
 

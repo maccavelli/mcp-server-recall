@@ -151,11 +151,31 @@ check "valid digest installs (exit 0)" "$RC" 0
 check "  binary installed executable" "$( [ -x "$D/$PRODUCT" ] && echo yes || echo no )" yes
 contains "  resolved version reported" "$OUT" "$VER"
 
+# A manifest carrying BOTH shapes is ambiguous and must fail closed. Before
+# MADR 0005 the versioned line simply won, but once canonical entries are
+# legitimate a preference either way lets an appended line authorize a
+# substituted binary. Refusing to choose is the only safe answer.
 R="$WORK/rel-alias"; mk_release "$R" "$ARCH"
 printf 'deadbeef  %s-linux-%s\n' "$PRODUCT" "$ARCH" >> "$R/latest/download/SHA256SUMS"
-D="$WORK/bin-alias"
+D="$WORK/bin-alias"; mkdir -p "$D"; printf 'PREEXISTING\n' > "$D/$PRODUCT"
 run_installer "$BASE" "$R" "$D"
-check "alias line does not shadow the versioned line" "$RC" 0
+check "ambiguous manifest (canonical + versioned) exits 2" "$RC" 2
+check "  existing install untouched by an ambiguous manifest" "$(cat "$D/$PRODUCT")" "PREEXISTING"
+
+# A canonical-only manifest is the v-next shape and must install cleanly.
+R="$WORK/rel-canonical"; mk_release "$R" "$ARCH"
+printf '%s  %s-linux-%s\n' "$(sha_of "$R/latest/download/$PRODUCT-linux-$ARCH")" "$PRODUCT" "$ARCH" \
+    > "$R/latest/download/SHA256SUMS"
+D="$WORK/bin-canonical"
+run_installer "$BASE" "$R" "$D"
+check "canonical-only manifest installs (exit 0)" "$RC" 0
+check "  binary installed executable" "$( [ -x "$D/$PRODUCT" ] && echo yes || echo no )" yes
+
+# The remaining cases need a conforming release, not the tampered one.
+R="$WORK/rel-rerun"; mk_release "$R" "$ARCH"
+D="$WORK/bin-rerun"
+run_installer "$BASE" "$R" "$D"
+check "first install for the re-run case (exit 0)" "$RC" 0
 
 run_installer "$BASE" "$R" "$D"
 check "re-run is idempotent (exit 0)" "$RC" 0

@@ -9,6 +9,32 @@ record keys.
 > Documentation status: audited against `main` on 2026-08-29 and updated for
 > v2.0.0. The complete Go test suite passed during the audit.
 
+## Keeping it up to date
+
+```bash
+mcp-server-recall update            # confirm, then install the latest release
+mcp-server-recall update --check    # report only; exit 10 if an update is available
+mcp-server-recall update --version v2.1.0   # install that exact release
+```
+
+`--check` reports only (exit `0` up to date, `10` actionable, `1` error) and
+contradicts `--yes`/`--force`. `--yes`/`-y` approves without prompting; a
+non-interactive apply without it fails rather than hanging. `--force` replaces a
+locally built binary or reinstalls the selected version, and never bypasses
+version, asset, size, integrity or target checks. `--version vX.Y.Z` installs an
+exact release, and a lower tag is reported as an explicit rollback.
+
+`update` initializes nothing else: no Viper, no fsnotify watcher, no datastore,
+no service, no MCP server. Its output goes to stderr, so the JSON-RPC stdout
+stays protocol-clean. Set `GH_TOKEN` or `GITHUB_TOKEN` to raise GitHub API rate
+limits; the token is sent only to the GitHub API origin.
+
+A binary you built yourself is a local build and `update` refuses to replace it
+without `--force`. If you installed through a package manager, update through
+that manager instead. Releases are immutable `vMAJOR.MINOR.PATCH` tags
+publishing the exact `mcp-server-recall-<goos>-<goarch>[.exe]` assets and one
+`SHA256SUMS`; a rebuilt fix gets a new patch tag (mcplib MADR 0005).
+
 ## Install
 
 The v2.0.0 bootstrap installers detect the supported OS and architecture,
