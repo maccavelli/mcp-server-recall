@@ -1,6 +1,6 @@
 module github.com/maccavelli/mcp-server-recall
 
-go 1.26.5
+go 1.26.6
 
 require (
 	github.com/blevesearch/bleve/v2 v2.6.0
