@@ -79,7 +79,7 @@ Three sites combine.
    ```
 
    `filepath.IsAbs("")` is false. On this host, `filepath.Abs("")` returns the current working
-   directory (`/Users/saxsmith/gitrepos/go/mcp-server-recall` when run from the repo). There is
+   directory (`/Users/<user>/gitrepos/go/mcp-server-recall` when run from the repo). There is
    no empty-string branch.
 
 `ExportDir` already special-cases empty as `os.TempDir()`
@@ -169,11 +169,11 @@ This investigation host has XDG variables set *and* a live store under
 `~/Library/Application Support`:
 
 ```
-XDG_CONFIG_HOME=/Users/saxsmith/.config
-XDG_DATA_HOME=/Users/saxsmith/.local/share
-XDG_CACHE_HOME=/Users/saxsmith/.cache
-XDG_STATE_HOME=/Users/saxsmith/.local/state
-os.UserConfigDir()=/Users/saxsmith/Library/Application Support   # XDG ignored
+XDG_CONFIG_HOME=/Users/<user>/.config
+XDG_DATA_HOME=/Users/<user>/.local/share
+XDG_CACHE_HOME=/Users/<user>/.cache
+XDG_STATE_HOME=/Users/<user>/.local/state
+os.UserConfigDir()=/Users/<user>/Library/Application Support   # XDG ignored
 ```
 
 Neither `~/.config/mcp-server-recall` nor `~/.local/share/mcp-server-recall` exists.
@@ -534,7 +534,7 @@ already has to touch. They are not separate architectural choices.
 
 ### Evidence
 
-* Installed binary: `/Users/saxsmith/.local/bin/mcp-server-recall`,
+* Installed binary: `/Users/<user>/.local/bin/mcp-server-recall`,
   `mcp-server-recall version 1.0.2-1-g0f60745`, Mach-O arm64, dated 2026-08-23.
 * Scratch `HOME=/tmp/recall-configure-bBV8`: `configure` exit 0, `dbpath: ""`, empty
   `.mcp_recall`, no `MANIFEST`.
@@ -547,8 +547,8 @@ already has to touch. They are not separate architectural choices.
 * Viper probe with no YAML: default path under Application Support is used.
 * `filepath.Abs("")` on this host equals CWD (Go 1.26.5).
 * `os.UserConfigDir()` on this host equals
-  `/Users/saxsmith/Library/Application Support` while `XDG_CONFIG_HOME` is
-  `/Users/saxsmith/.config`.
+  `/Users/<user>/Library/Application Support` while `XDG_CONFIG_HOME` is
+  `/Users/<user>/.config`.
 * `go doc os.UserDataDir` does not exist on go1.26.5.
 * Live store listing (2026-08-29): `MANIFEST`, `LOCK`, `KEYREGISTRY`, `000001.vlog`,
   `00001.mem`, `DISCARD`, `search_index/`, `telemetry.ring`.
