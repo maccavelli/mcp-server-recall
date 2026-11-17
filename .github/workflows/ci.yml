@@ -108,6 +108,14 @@ jobs:
           fi
           sh scripts/install_test.sh
 
+      # Holds 0008-MADR: the tag build below must stamp RawBuildKind=release.
+      # Runs on every push so a lost flag fails before a tag, not at it.
+      - name: Release build flags
+        run: |
+          set -euo pipefail
+          shellcheck -s sh scripts/check_release_flags.sh
+          sh scripts/check_release_flags.sh
+
       - name: Build release binaries
         id: build
         if: github.ref_type == 'tag'
@@ -121,7 +129,7 @@ jobs:
           VER="${TAG#v}"
           echo "version=$VER" >> "$GITHUB_OUTPUT"
 
-          make build-all VERSION="$TAG"
+          make build-all VERSION="$TAG" BUILD_KIND=release
 
           mkdir -p dist
           f="dist/mcp-server-recall-linux-amd64"

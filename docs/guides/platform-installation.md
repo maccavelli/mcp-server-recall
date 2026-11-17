@@ -36,7 +36,8 @@ The installers:
 
 1. Detect the operating system and architecture.
 2. Download the unversioned alias for the selected release binary.
-3. Find its versioned entry in `SHA256SUMS` and verify the hash value.
+3. Find its entry in `SHA256SUMS` (the exact asset name; a versioned name is
+   also accepted for older releases) and verify the hash value.
 4. Move an existing binary to `.prev` before installing the replacement.
 5. Install per-user without `sudo` or administrator elevation.
 6. Run `configure --encrypt-db=true` unless configuration is disabled.
@@ -151,8 +152,8 @@ Persist the same line in the startup file used by your shell, such as
 ### Manual verified download
 
 This fallback supports both release architectures and deliberately verifies by
-hash value. The manifest contains versioned filenames even though the download
-uses an unversioned alias.
+hash value. `SHA256SUMS` lists the exact asset names, so the entry for the
+download is the one whose name equals the file you downloaded.
 
 ```bash
 case "$(uname -m)" in
@@ -167,8 +168,8 @@ curl -fL -o /tmp/mcp-server-recall \
 curl -fL -o /tmp/mcp-server-recall-SHA256SUMS \
   https://github.com/maccavelli/mcp-server-recall/releases/latest/download/SHA256SUMS
 
-EXPECTED=$(awk -v prefix="mcp-server-recall-linux-${ARCH}-" \
-  '$2 ~ ("^" prefix "[0-9]") { print $1; exit }' \
+EXPECTED=$(awk -v name="mcp-server-recall-linux-${ARCH}" \
+  '$2 == name { print $1; exit }' \
   /tmp/mcp-server-recall-SHA256SUMS)
 ACTUAL=$(sha256sum /tmp/mcp-server-recall | awk '{print $1}')
 test -n "$EXPECTED" && test "$ACTUAL" = "$EXPECTED"
@@ -212,7 +213,7 @@ curl -fL -o /tmp/mcp-server-recall-SHA256SUMS \
   https://github.com/maccavelli/mcp-server-recall/releases/latest/download/SHA256SUMS
 
 EXPECTED=$(awk \
-  '$2 ~ /^mcp-server-recall-darwin-arm64-[0-9]/ { print $1; exit }' \
+  '$2 == "mcp-server-recall-darwin-arm64" { print $1; exit }' \
   /tmp/mcp-server-recall-SHA256SUMS)
 ACTUAL=$(shasum -a 256 /tmp/mcp-server-recall | awk '{print $1}')
 test -n "$EXPECTED" && test "$ACTUAL" = "$EXPECTED"
@@ -265,9 +266,9 @@ Open a new terminal after changing PATH.
 
 ### Manual verified download
 
-The release manifest uses the versioned name
-`mcp-server-recall-windows-amd64-X.Y.Z.exe`; verification therefore selects
-that prefix and compares its hash to the unversioned alias download.
+The release manifest lists the exact asset name
+`mcp-server-recall-windows-amd64.exe`; verification selects that entry and
+compares its hash to the download.
 
 ```powershell
 $download = Join-Path $env:TEMP 'mcp-server-recall.exe'
@@ -281,11 +282,11 @@ Invoke-WebRequest `
   'https://github.com/maccavelli/mcp-server-recall/releases/latest/download/SHA256SUMS' `
   -OutFile $sumsPath
 
-$prefix = 'mcp-server-recall-windows-amd64-'
+$assetName = 'mcp-server-recall-windows-amd64.exe'
 $line = Get-Content $sumsPath |
-  Where-Object { $_ -match [regex]::Escape($prefix) } |
+  Where-Object { ($_ -split '\s+' | Where-Object { $_ })[-1] -eq $assetName } |
   Select-Object -First 1
-if (-not $line) { throw "No checksum entry found for $prefix" }
+if (-not $line) { throw "No checksum entry found for $assetName" }
 
 $expected = (($line -split '\s+' | Where-Object { $_ })[0]).ToLower()
 $actual = (Get-FileHash $download -Algorithm SHA256).Hash.ToLower()

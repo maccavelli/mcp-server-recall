@@ -35,6 +35,14 @@ that manager instead. Releases are immutable `vMAJOR.MINOR.PATCH` tags
 publishing the exact `mcp-server-recall-<goos>-<goarch>[.exe]` assets and one
 `SHA256SUMS`; a rebuilt fix gets a new patch tag (mcplib MADR 0005).
 
+Releases v2.1.0 and v2.1.1 were built without the release stamp, so those
+binaries behave as local builds: `update --check` always reports "update
+available" and a plain `update` refuses (0008-MADR). From v2.1.2 on, release
+binaries carry the stamp. Once v2.1.2 or later is the latest release, leave a
+v2.1.0 or v2.1.1 binary by running `mcp-server-recall update --force` once (it
+asks before replacing), or by running the installer again; after that the
+binary updates normally.
+
 ## Install
 
 The v2.0.0 bootstrap installers detect the supported OS and architecture,
