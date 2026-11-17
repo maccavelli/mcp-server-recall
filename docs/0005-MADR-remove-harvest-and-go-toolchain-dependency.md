@@ -570,3 +570,12 @@ its own architectural change. Phase 9 of the plan scopes the investigation.
 * An implementation plan
   (`0005-PLAN-remove-harvest-and-go-toolchain-dependency.md`) must be written
   and approved before any code changes begin.
+
+### A1 (2026-11-17): the Go that builds the binary moved; this record is unaffected
+
+This record's "Go toolchain" is the runtime `go` binary the removed harvest
+code searched for (its hard-coded `~/sdk/go1.26.5` is one such search path).
+[0007-MADR](0007-MADR-move-toolchain-to-go-1-27-4-and-floor-to-1-26-11.md)
+moves the Go that **builds** the binary (`go 1.26.11`, `toolchain go1.27.4`).
+Nothing here changes: the product still needs no Go at run time. The rest of
+this record stands as written.
