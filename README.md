@@ -144,7 +144,7 @@ guide.
 
 The binary runs without Go, and no subcommand requires a Go toolchain. Go is
 needed only to build from source; current source development requires Go
-1.26.5.
+1.26.11 or later and is built and tested with Go 1.27.4.
 
 ## Supported platforms
 

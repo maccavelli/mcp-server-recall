@@ -8,7 +8,8 @@ a working administrative CLI, and the dashboard.
 Choose the path that matches what you need:
 
 - For the latest release, use the checksum-verifying one-line installer.
-- For the current `main` branch, build from source with Go 1.26.5.
+- For the current `main` branch, build from source with Go 1.26.11 or later
+  (the repository is built and tested with Go 1.27.4).
 - For a manual prebuilt installation, download the latest release and verify
   its checksum.
 
