@@ -262,3 +262,39 @@ Chosen option: **A**, because it is the owner's instruction and rulings
   [GO-2026-6859](https://pkg.go.dev/vuln/GO-2026-6859).
 * go-selfupdate-lib's 0045-MADR, the model for this record's form.
 * [0007-PLAN](0007-PLAN-move-toolchain-to-go-1-27-4-and-floor-to-1-26-11.md).
+
+### A2 (2026-11-17): the owner's word for the release, and three facts now measured
+
+The text above stays as written. After the pair and the change were
+committed and pushed to `main`:
+
+* **The release.** The owner gave the word, as the coordinator relayed it,
+  verbatim: "You may push the mcp-server-recall v2.1.1 tag". The tag is
+  made and pushed by the coordinator, after CI on the change commit is
+  green. The "Consequences" paragraph's "need the owner's word" is thereby
+  met for `v2.1.1`; the PLAN's Amendment A1 holds the steps and checks.
+* **Not verified, first item of that list, now answered:** "That CI's
+  `setup-go` installs 1.27.4 on the runners". CI's run on the change
+  commit logged "Successfully set up Go version 1.27.4" on all four
+  platforms (linux/amd64, linux/arm64, windows/amd64, darwin/arm64), and
+  the lint step ran golangci-lint v2.15.0 with "0 issues." (PLAN A1, R0).
+* **Not verified, "Reading a database written before the bump with the new
+  library", now answered for the storage API.** A scratch build of
+  `v2.1.0` and of `HEAD` each wrote 300 records through `NewMemoryStore`
+  and `Save`, with and without an encryption key; the other build read all
+  300 byte-identically, both ways, and `v2.1.0` still read after `HEAD`
+  had opened the store (PLAN A1, R4). Still not shown: a real user's data,
+  a running `serve`, and `export` and `import`.
+* **The number.** `v2.1.0..HEAD` holds three commits, two of them docs
+  only and one a dependency and build change, with no `.go` file touched
+  (PLAN A1, R3), so `v2.1.1` is a PATCH release.
+
+### A3 (2026-11-17): `v2.1.1` released
+
+The tag was pushed on the owner's word and its CI run passed every job.
+The release is published, immutable, not a draft, carries the seven
+assets, passes `gh release verify`, and its checksums match; it is the
+repository's "latest" (PLAN A2). Two older issues found while checking, a
+stale checksum snippet in the platform guide and release binaries stamped
+`RawBuildKind=local`, are recorded in PLAN A2 and left to the owner. This
+record stays `accepted`.
