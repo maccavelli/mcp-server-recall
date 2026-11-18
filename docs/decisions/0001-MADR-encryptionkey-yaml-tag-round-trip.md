@@ -34,7 +34,7 @@ WARN error parsing recall.yaml error="While parsing config:
 ```
 
 `While parsing config:` is viper's prefix, produced by `v.ReadInConfig()` at
-[`internal/config/config.go:169`](../internal/config/config.go). The node carries an explicit
+[`internal/config/config.go:169`](../../internal/config/config.go). The node carries an explicit
 `!!null` tag while holding a 64-character hex string; a `!!null`-tagged node may only be null,
 so typed decoding fails.
 
@@ -42,11 +42,11 @@ so typed decoding fails.
 
 Three code sites combine:
 
-1. [`cmd/mcp-server-recall/config_template.go:20`](../cmd/mcp-server-recall/config_template.go)
+1. [`cmd/mcp-server-recall/config_template.go:20`](../../cmd/mcp-server-recall/config_template.go)
    writes `encryptionkey: %s`. On a fresh install the substitution is empty, producing
    `encryptionkey:` — which YAML resolves to a scalar node tagged `!!null`.
 
-2. [`cmd/mcp-server-recall/configure.go:144-148`](../cmd/mcp-server-recall/configure.go)
+2. [`cmd/mcp-server-recall/configure.go:144-148`](../../cmd/mcp-server-recall/configure.go)
    performs AST surgery that assigns **only the value**:
 
    ```go
@@ -61,8 +61,8 @@ Three code sites combine:
    alongside the new string: `encryptionkey: !!null <64-hex>`.
 
 3. On the next load, viper's typed decode rejects that node, `Cfg.EncryptionKey()`
-   ([`internal/config/config.go:287`](../internal/config/config.go)) returns `""`, and
-   [`internal/memory/badger.go:427`](../internal/memory/badger.go) takes the
+   ([`internal/config/config.go:287`](../../internal/config/config.go)) returns `""`, and
+   [`internal/memory/badger.go:427`](../../internal/memory/badger.go) takes the
    `encryptionKey == ""` branch — opening the store unencrypted.
 
 The writer therefore produces a file its own reader refuses. The round trip is broken, not the
@@ -198,7 +198,7 @@ The decision is confirmed when all of the following hold:
 4. `grep -c '!!null' recall.yaml` returns `0` for a config written by the fixed wizard that
    carries a key.
 5. On the live host, `mcp-server-recall serve` logs `encrypted=true`
-   ([`internal/memory/badger.go:336`](../internal/memory/badger.go)) after reconfiguration.
+   ([`internal/memory/badger.go:336`](../../internal/memory/badger.go)) after reconfiguration.
 
 ## Pros and Cons of the Options
 

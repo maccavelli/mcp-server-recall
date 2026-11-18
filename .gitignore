@@ -15,3 +15,6 @@ coverage_summary.txt
 tmp/
 temp/
 telemetry.ring
+
+__pycache__/
+*.py[cod]

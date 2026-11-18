@@ -1,3 +1,9 @@
+---
+status: implemented
+date: 2026-08-29
+associated-madr: "0002-MADR-configure-os-native-datastore-init.md"
+---
+
 # Implement Treat empty dbpath as the platform data directory and materialize the datastore during configure
 
 Associated MADR: [0002-MADR-configure-os-native-datastore-init.md](0002-MADR-configure-os-native-datastore-init.md) (status: accepted)

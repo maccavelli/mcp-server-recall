@@ -5,7 +5,7 @@ describes the `main` source tree **as audited on 2026-08-29 at commit
 `90c4bef`**, not an aspirational product design.
 
 > **Partly superseded by
-> [0005-MADR](../0005-MADR-remove-harvest-and-go-toolchain-dependency.md).**
+> [0005-MADR](../decisions/0005-MADR-remove-harvest-and-go-toolchain-dependency.md).**
 > The harvest subsystem, both `harvest` CLI commands, the `harvest` MCP tool,
 > every `harvest.*` configuration key, and the entire dependency on an external
 > Go toolchain have since been removed. Findings below that concern harvesting

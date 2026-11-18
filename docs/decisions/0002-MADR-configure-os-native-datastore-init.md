@@ -46,11 +46,11 @@ A second run with `RECALL_ENCRYPTION_KEY` set to a 64-character hex string wrote
 
 Three sites combine.
 
-1. [`cmd/mcp-server-recall/config_template.go:16`](../cmd/mcp-server-recall/config_template.go)
+1. [`cmd/mcp-server-recall/config_template.go:16`](../../cmd/mcp-server-recall/config_template.go)
    writes `dbpath: ""`. The surrounding comments say an empty value means "use the OS default
    config directory alongside this file."
 
-2. [`internal/config/config.go:115`](../internal/config/config.go) sets
+2. [`internal/config/config.go:115`](../../internal/config/config.go) sets
    `v.SetDefault("dbPath", filepath.Join(appConfigDir, DefaultDBName))`. Viper applies a default
    only when the key is unset. A present empty string is set. Confirmed against the scratch
    `recall.yaml` with viper `v1.21.0` (the version in `go.mod`):
@@ -65,7 +65,7 @@ Three sites combine.
    With no config file at all, the same default *does* apply and resolves under the config
    directory. The template's empty key is what disables it.
 
-3. [`internal/config/config.go:257-268`](../internal/config/config.go) `GetDBPath`:
+3. [`internal/config/config.go:257-268`](../../internal/config/config.go) `GetDBPath`:
 
    ```go
    p := c.state.DBPath
@@ -83,18 +83,18 @@ Three sites combine.
    no empty-string branch.
 
 `ExportDir` already special-cases empty as `os.TempDir()`
-([`config.go:275-283`](../internal/config/config.go)). `GetDBPath` does not. The two accessors
+([`config.go:275-283`](../../internal/config/config.go)). `GetDBPath` does not. The two accessors
 disagree on the meaning of an empty YAML scalar that the template documents as "use the OS
 default."
 
-[`cmd/mcp-server-recall/serve.go:125`](../cmd/mcp-server-recall/serve.go) then opens Badger at
+[`cmd/mcp-server-recall/serve.go:125`](../../cmd/mcp-server-recall/serve.go) then opens Badger at
 `Cfg.GetDBPath()`. After a fresh `configure`, that is CWD. `NewMemoryStore`
-([`internal/memory/badger.go:280`](../internal/memory/badger.go)) calls `os.MkdirAll(dbPath, 0o750)`
+([`internal/memory/badger.go:280`](../../internal/memory/badger.go)) calls `os.MkdirAll(dbPath, 0o750)`
 on that path and writes `MANIFEST` / `LOCK` / vlog *into the working directory*.
 
 ### Compounding effect on `purge`
 
-[`cmd/mcp-server-recall/purge.go:20-23`](../cmd/mcp-server-recall/purge.go) refuses only `""`,
+[`cmd/mcp-server-recall/purge.go:20-23`](../../cmd/mcp-server-recall/purge.go) refuses only `""`,
 `"/"`, and `"."`. After `GetDBPath` has turned `""` into an absolute CWD, none of those match.
 `purge --force` would therefore `os.RemoveAll(<cwd>)` — the entire working tree, not a recall
 store. Confirmed: the viper probe printed `purge_guard_would_block=false` for the scratch
@@ -104,7 +104,7 @@ This is not a hypothetical. It is the same empty-string path, one command later.
 
 ### `configure` never materializes a store
 
-[`ensureInitialized`](../cmd/mcp-server-recall/configure.go) (`configure.go:198-238`):
+[`ensureInitialized`](../../cmd/mcp-server-recall/configure.go) (`configure.go:198-238`):
 
 * Returns immediately if `recall.yaml` already exists and `--force` is unset, *without*
   checking that the data directory exists.
@@ -201,7 +201,7 @@ Recall today joins the database onto `UserConfigDir` in three places
 * **macOS:** a datastore in `~/Library/Application Support/mcp-server-recall/.mcp_recall` —
   correct for Apple, and it is where this host's live store already is.
 
-[`cmd/mcp-server-recall/paths.go:12-24`](../cmd/mcp-server-recall/paths.go) documents those
+[`cmd/mcp-server-recall/paths.go:12-24`](../../cmd/mcp-server-recall/paths.go) documents those
 config locations and falls back to `"."` when `UserConfigDir` fails, printing a warning on
 stderr. `config.New` does the same fallback (`config.go:100-104`). Combined with
 `v.AddConfigPath(".")` (`config.go:111`), a missing user config plus an empty `dbpath`
@@ -211,7 +211,7 @@ loads or creates state in CWD — the same class of failure as `filepath.Abs("")
 
 ### Relationship to mcplib MADR 0002
 
-[mcplib `0002-MADR-xdg-compliant-user-paths.md`](../../mcplib/docs/0002-MADR-xdg-compliant-user-paths.md)
+mcplib record `0002-MADR-xdg-compliant-user-paths.md`
 (accepted 2026-08-23) decided a shared `mcplib/paths` package with platform-native defaults
 **and** `XDG_*` honoured on every platform, including macOS. Its plan has not been executed:
 `mcplib` at the version this module requires (`v1.0.1`) has no `paths` package.
@@ -235,13 +235,13 @@ this host.
 ### Documentation already disagrees with the binary
 
 * README "Step 3" and the `configure` flag table document `--key` / `-k`
-  ([README.md:117](../README.md), [README.md:206](../README.md)). The installed binary's
+  ([README.md:117](../../README.md), [README.md:206](../../README.md)). The installed binary's
   `configure --help` exposes only `--force` / `-f` and `--allow-unencrypted`. There is no
   `--key` flag in `configure.go`.
 * README default config path is `~/.config/mcp-server-recall/recall.yaml`
-  ([README.md:371](../README.md)), which is the Linux path, published unconditionally.
+  ([README.md:371](../../README.md)), which is the Linux path, published unconditionally.
 * README and the template comment call the key a "32-character hex" key
-  ([README.md:386](../README.md), `config_template.go:19`). The wizard requires 64 hex
+  ([README.md:386](../../README.md), `config_template.go:19`). The wizard requires 64 hex
   characters (32 bytes). 0001 already fixed the length check; the comments were not updated.
 * `configure` reads `RECALL_ENCRYPTION_KEY`. `config.New` binds
   `MCP_RECALL_ENCRYPTION_KEY` / `MCP_RECALL_ENCRYPTIONKEY` (`config.go:95`). They are not
@@ -499,7 +499,7 @@ configured override and is unchanged by that constraint.
   (accepted) — how the encryption key is serialized. Implemented. This record does not
   reopen that decision. The remaining 0001 follow-up (narrow `recoverNullTaggedKey`)
   stays with 0001 and must not be mixed into this change set.
-* [mcplib 0002-MADR-xdg-compliant-user-paths.md](../../mcplib/docs/0002-MADR-xdg-compliant-user-paths.md)
+* mcplib record `0002-MADR-xdg-compliant-user-paths.md`
   (accepted, unimplemented) — fleet-wide path helpers. This record disagrees with that
   record's Darwin XDG behaviour as applied to this host, and does not wait for the
   package. Reconcile before any later swap.

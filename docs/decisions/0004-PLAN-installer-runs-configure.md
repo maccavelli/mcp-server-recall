@@ -1,3 +1,9 @@
+---
+status: accepted
+date: 2026-08-29
+associated-madr: "0004-MADR-installer-runs-configure.md"
+---
+
 # Implement The installer runs configure --encrypt-db so a piped install finishes a usable store
 
 Associated MADR: [0004-MADR-installer-runs-configure.md](0004-MADR-installer-runs-configure.md) (status: accepted)

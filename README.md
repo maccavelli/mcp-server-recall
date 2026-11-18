@@ -106,6 +106,7 @@ key matching. See the [repository assessment](docs/guides/repository-assessment.
 | Read the dashboard and telemetry | [Dashboard and observability](docs/guides/dashboard-and-observability.md) |
 | Back up data or understand security boundaries | [Operations and security](docs/guides/operations-and-security.md) |
 | Understand what is complete, partial, or misleading | [Repository assessment](docs/guides/repository-assessment.md) |
+| Find the decision records and the docs index | [Documentation index](docs/README.md) |
 
 ## Quick start
 
@@ -170,6 +171,9 @@ paths, checksums, PATH setup, and Go discovery are covered in the
 [platform guide](docs/guides/platform-installation.md).
 
 ## Documentation library
+
+The docs index, architecture note, and decision records are in
+[the documentation index](docs/README.md).
 
 1. [Getting started](docs/guides/getting-started.md) — first configuration,
    runtime modes, and a working smoke test.

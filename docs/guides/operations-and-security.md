@@ -190,7 +190,7 @@ before enabling automated maintenance.
 
 ## Upgrading across the index schema change
 
-The release carrying [MADR 0006](../0006-MADR-domain-scoped-secondary-indexes.md)
+The release carrying [MADR 0006](../decisions/0006-MADR-domain-scoped-secondary-indexes.md)
 replaced the secondary index key schema. The change is deliberate and not
 backwards compatible: **a datastore written by an earlier release cannot be read
 by this one.** There is no migration and none is planned.

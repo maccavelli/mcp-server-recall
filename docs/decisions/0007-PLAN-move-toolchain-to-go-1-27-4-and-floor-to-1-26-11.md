@@ -1,5 +1,5 @@
 ---
-status: complete
+status: implemented
 date: 2026-11-17
 associated-madr: "0007-MADR-move-toolchain-to-go-1-27-4-and-floor-to-1-26-11.md"
 ---

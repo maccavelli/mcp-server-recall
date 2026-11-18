@@ -1,3 +1,9 @@
+---
+status: accepted
+date: 2026-08-29
+associated-madr: "0001-MADR-encryptionkey-yaml-tag-round-trip.md"
+---
+
 # Implement Persist the recall encryption key as an explicitly typed YAML string and never discard it silently
 
 Associated MADR: [0001-MADR-encryptionkey-yaml-tag-round-trip.md](0001-MADR-encryptionkey-yaml-tag-round-trip.md) (status: accepted)
@@ -60,7 +66,7 @@ currently unmet, and criterion 7 has no repository evidence.
 | `internal/config/config_test.go` | new tests | positive and negative legacy-recovery coverage |
 
 Out of scope: the database location (that is
-[`mcplib` MADR 0002](../../mcplib/docs/0002-MADR-xdg-compliant-user-paths.md)), the keychain
+mcplib record `0002-MADR-xdg-compliant-user-paths.md`), the keychain
 option, typed-struct marshalling, and any change to `internal/memory/badger.go`.
 
 ## Historical Baseline and Preconditions

@@ -1,3 +1,9 @@
+---
+status: accepted
+date: 2026-08-29
+associated-madr: "0003-MADR-curl-bootstrap-installer.md"
+---
+
 # Implement Ship a curl/PowerShell bootstrap installer that reuses magic-cli-remote's release-asset contract
 
 Associated MADR: [0003-MADR-curl-bootstrap-installer.md](0003-MADR-curl-bootstrap-installer.md) (status: accepted)
